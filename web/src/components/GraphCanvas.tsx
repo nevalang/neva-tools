@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MouseEvent } from 'react'
 import {
+  applyNodeChanges,
   Background,
   Controls,
   Handle,
@@ -10,12 +11,14 @@ import {
   type ReactFlowInstance,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeProps,
 } from '@xyflow/react'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { endpointPortName, inferImplicitPortName, parseSignaturePorts, shouldAddImplicitErrEdge, shouldAddImplicitInputEdge } from '../lib/graphSemantics'
 import { type AppRoute } from '../lib/appSemantics'
 import type { Component, DINode, Endpoint, FileView, ModuleSummary, Port, ResolvedRef } from '../lib/types'
+import { routeToHash } from '../lib/routeCodec'
 
 type Route = AppRoute
 
@@ -699,6 +702,37 @@ async function applyLayout(nodes: Node<NodeData>[], edges: Edge[], direction: 'D
   })
 }
 
+type PersistedLayout = {
+  signature: string
+  positions: Record<string, { x: number; y: number }>
+}
+
+function routeLayoutKey(route: Route): string {
+  return `neva-lsp:layout:v1:${routeToHash(route)}`
+}
+
+function nodeSignature(nodes: Node<NodeData>[]): string {
+  return nodes.map((node) => node.id).sort().join('|')
+}
+
+function loadPersistedLayout(key: string): PersistedLayout | null {
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return null
+    return JSON.parse(raw) as PersistedLayout
+  } catch {
+    return null
+  }
+}
+
+function savePersistedLayout(key: string, payload: PersistedLayout) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(payload))
+  } catch {
+    // Ignore storage errors to avoid blocking graph interactions.
+  }
+}
+
 export function GraphCanvas({
   modules,
   route,
@@ -716,6 +750,9 @@ export function GraphCanvas({
   const [flow, setFlow] = useState<ReactFlowInstance<Node<NodeData>, Edge> | null>(null)
   const [layoutVersion, setLayoutVersion] = useState(0)
   const [copyDone, setCopyDone] = useState(false)
+  const [interactive, setInteractive] = useState(true)
+  const [layoutKey, setLayoutKey] = useState<string | null>(null)
+  const [layoutSignature, setLayoutSignature] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark'
@@ -787,8 +824,20 @@ export function GraphCanvas({
 
       const laidOut = await applyLayout(nextNodes, nextEdges, direction)
       if (!canceled) {
-        setNodes(laidOut)
+        const key = routeLayoutKey(route)
+        const signature = nodeSignature(laidOut)
+        const saved = loadPersistedLayout(key)
+        const withSavedPositions = saved && saved.signature === signature
+          ? laidOut.map((node) => ({
+            ...node,
+            position: saved.positions[node.id] ?? node.position,
+          }))
+          : laidOut
+
+        setNodes(withSavedPositions)
         setEdges(nextEdges)
+        setLayoutKey(key)
+        setLayoutSignature(signature)
         setLayoutVersion((v) => v + 1)
       }
     }
@@ -823,6 +872,21 @@ export function GraphCanvas({
       return { kind: 'entity', fileId: node.data.fileId, entityId: node.data.entityId }
     }
     return null
+  }
+
+  function handleNodesChange(changes: NodeChange<Node<NodeData>>[]) {
+    setNodes((current) => applyNodeChanges(changes, current))
+  }
+
+  function persistCurrentLayout(nextNodes: Node<NodeData>[]) {
+    if (!layoutKey || !layoutSignature) {
+      return
+    }
+    const positions: Record<string, { x: number; y: number }> = {}
+    for (const node of nextNodes) {
+      positions[node.id] = { x: node.position.x, y: node.position.y }
+    }
+    savePersistedLayout(layoutKey, { signature: layoutSignature, positions })
   }
 
   return (
@@ -868,13 +932,20 @@ export function GraphCanvas({
         nodes={nodes}
         edges={edges}
         defaultEdgeOptions={{
-          type: 'step',
+          type: 'straight',
           style: { strokeWidth: 1.5 },
         }}
         nodeTypes={nodeTypes}
-        nodesDraggable
+        nodesDraggable={interactive}
+        elementsSelectable={interactive}
+        panOnDrag={interactive}
         fitView
         onInit={setFlow}
+        onNodesChange={handleNodesChange}
+        onNodeDragStop={(_, draggedNode) => {
+          const updatedNodes = nodes.map((node) => (node.id === draggedNode.id ? { ...node, position: draggedNode.position } : node))
+          persistCurrentLayout(updatedNodes)
+        }}
         onNodeClick={(_, node) => {
           const nextRoute = routeDown(route, node)
           if (nextRoute) {
@@ -900,7 +971,10 @@ export function GraphCanvas({
           maskStrokeColor={theme === 'dark' ? '#e1e6ef' : '#3f4650'}
           maskStrokeWidth={1.25}
         />
-        <Controls />
+        <Controls
+          showInteractive
+          onInteractiveChange={(value) => setInteractive(value)}
+        />
         <Background />
       </ReactFlow>
     </section>

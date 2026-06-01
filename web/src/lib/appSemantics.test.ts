@@ -12,6 +12,30 @@ describe('appSemantics', () => {
     expect(inferInitialRoute(modules)).toEqual({ kind: 'module', modulePath: '@' })
   })
 
+  it('auto-opens single-file single-component entrypoint', () => {
+    const single: ModuleSummary[] = [
+      {
+        path: '@',
+        packages: [{
+          name: 'hello_world',
+          fileSummaries: [{
+            id: 'module/@/package/hello_world/file/main',
+            name: 'main',
+            components: [{ id: 'module/@/package/hello_world/file/main/component/Main@0', name: 'Main' }],
+            interfaces: [],
+            types: [],
+            consts: [],
+          }],
+        }],
+      },
+    ]
+    expect(inferInitialRoute(single)).toEqual({
+      kind: 'entity',
+      fileId: 'module/@/package/hello_world/file/main',
+      entityId: 'module/@/package/hello_world/file/main/component/Main@0',
+    })
+  })
+
   it('validates routes against program', () => {
     expect(routeExistsInProgram({ kind: 'modules' }, modules)).toBe(true)
     expect(routeExistsInProgram({ kind: 'module', modulePath: '@' }, modules)).toBe(true)

@@ -17,6 +17,27 @@ export function inferInitialRoute(modules: ModuleSummary[]): AppRoute {
     return { kind: 'modules' }
   }
 
+  if (activeModule.packages.length === 1) {
+    const onlyPackage = activeModule.packages[0]
+    if (onlyPackage && onlyPackage.fileSummaries.length === 1) {
+      const onlyFile = onlyPackage.fileSummaries[0]
+      if (onlyFile) {
+        const componentEntities = onlyFile.components ?? []
+        const interfaceEntities = onlyFile.interfaces ?? []
+        const typeEntities = onlyFile.types ?? []
+        const constEntities = onlyFile.consts ?? []
+        const entityTotal =
+          componentEntities.length +
+          interfaceEntities.length +
+          typeEntities.length +
+          constEntities.length
+        if (entityTotal === 1 && componentEntities.length === 1) {
+          return { kind: 'entity', fileId: onlyFile.id, entityId: componentEntities[0].id }
+        }
+      }
+    }
+  }
+
   return { kind: 'module', modulePath: activeModule.path }
 }
 

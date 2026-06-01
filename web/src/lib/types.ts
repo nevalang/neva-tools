@@ -15,6 +15,10 @@ export type PackageSummary = {
 export type FileSummary = {
   id: string
   name: string
+  components?: Array<{ id: string; name: string }>
+  interfaces?: Array<{ id: string; name: string }>
+  types?: Array<{ id: string; name: string }>
+  consts?: Array<{ id: string; name: string }>
 }
 
 export type SourceAnchor = {
