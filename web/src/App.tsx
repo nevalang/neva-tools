@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GraphCanvas } from './components/GraphCanvas'
 import { inferInitialRoute, isNativeComponent, routeExistsInProgram, type AppRoute } from './lib/appSemantics'
+import { parseHashRoute, routeToHash } from './lib/routeCodec'
 import { viewClient } from './lib/viewClient'
 import type { FileView, ModuleSummary } from './lib/types'
 
@@ -10,14 +11,6 @@ type Breadcrumb = {
   key: string
   label: string
   route: Route
-}
-
-function normalizeLegacyModulePath(modulePath: string): string {
-  return modulePath.replace(/^std@(?:v?\d[\w.-]*)$/, 'std')
-}
-
-function normalizeLegacyFileID(fileID: string): string {
-  return fileID.replace(/\/module\/std@(?:v?\d[\w.-]*)\//, '/module/std/')
 }
 
 function parseFileID(fileID: string): { modulePath: string; packageName: string; fileName: string } {
@@ -42,77 +35,6 @@ function displayModuleLabel(modulePath: string): string {
 function displayEntityName(rawID: string): string {
   const last = rawID.split('/').pop() ?? rawID
   return last.replace(/@\d+$/, '')
-}
-
-function parseHashRoute(): Route {
-  const hash = window.location.hash.replace(/^#/, '')
-  if (!hash) {
-    return { kind: 'modules' }
-  }
-
-  const params = new URLSearchParams(hash)
-  const kind = params.get('k')
-
-  if (kind === 'module') {
-    const modulePath = params.get('m')
-    if (modulePath) {
-      return { kind: 'module', modulePath: normalizeLegacyModulePath(modulePath) }
-    }
-  }
-
-  if (kind === 'package') {
-    const modulePath = params.get('m')
-    const packageName = params.get('p')
-    if (modulePath && packageName) {
-      return { kind: 'package', modulePath: normalizeLegacyModulePath(modulePath), packageName }
-    }
-  }
-
-  if (kind === 'file') {
-    const fileId = params.get('f')
-    if (fileId) {
-      return { kind: 'file', fileId: normalizeLegacyFileID(fileId) }
-    }
-  }
-
-  if (kind === 'component') {
-    const fileId = params.get('f')
-    const componentId = params.get('c')
-    if (fileId && componentId) {
-      return {
-        kind: 'component',
-        fileId: normalizeLegacyFileID(fileId),
-        componentId: normalizeLegacyFileID(componentId),
-      }
-    }
-  }
-
-  return { kind: 'modules' }
-}
-
-function routeToHash(route: Route): string {
-  const params = new URLSearchParams()
-  params.set('k', route.kind)
-
-  if (route.kind === 'module') {
-    params.set('m', route.modulePath)
-  }
-
-  if (route.kind === 'package') {
-    params.set('m', route.modulePath)
-    params.set('p', route.packageName)
-  }
-
-  if (route.kind === 'file') {
-    params.set('f', route.fileId)
-  }
-
-  if (route.kind === 'component') {
-    params.set('f', route.fileId)
-    params.set('c', route.componentId)
-  }
-
-  return `#${params.toString()}`
 }
 
 function routeKey(route: Route): string {
@@ -142,7 +64,7 @@ function fileDisplayName(fileID: string): string {
 
 export function App() {
   const [modules, setModules] = useState<ModuleSummary[]>([])
-  const [route, setRoute] = useState<Route>(() => parseHashRoute())
+  const [route, setRoute] = useState<Route>(() => parseHashRoute(window.location.hash))
   const [fileCache, setFileCache] = useState<Record<string, FileView>>({})
   const [backStack, setBackStack] = useState<Route[]>([])
   const [forwardStack, setForwardStack] = useState<Route[]>([])
@@ -183,7 +105,7 @@ export function App() {
 
   useEffect(() => {
     function onPopState() {
-      setRoute(parseHashRoute())
+      setRoute(parseHashRoute(window.location.hash))
     }
 
     window.addEventListener('popstate', onPopState)

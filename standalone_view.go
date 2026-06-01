@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	ast "github.com/nevalang/neva/pkg/ast"
@@ -35,7 +36,8 @@ func runStandaloneView(logger commonlog.Logger, workspacePath string, listenAddr
 	}
 
 	manifestCurrent := readManifestView(workspacePath)
-	mux := buildStandaloneMux(workspacePath, &build, manifestCurrent)
+	scope := detectWorkspaceProgramScope(workspacePath)
+	mux := buildStandaloneMux(workspacePath, &build, manifestCurrent, scope)
 
 	url := "http://" + listenAddr
 	logger.Info("standalone visual view running", "url", url)
@@ -47,21 +49,22 @@ func runStandaloneView(logger commonlog.Logger, workspacePath string, listenAddr
 	return server.ListenAndServe()
 }
 
-func buildStandaloneMux(workspacePath string, build *ast.Build, manifestCurrent manifestView) *http.ServeMux {
+func buildStandaloneMux(workspacePath string, build *ast.Build, manifestCurrent manifestView, scope workspaceProgramScope) *http.ServeMux {
 	mux := http.NewServeMux()
-	registerViewAPI(mux, build, manifestCurrent)
+	registerViewAPI(mux, build, manifestCurrent, scope)
 	registerStaticUI(mux)
 	return mux
 }
 
-func registerViewAPI(mux *http.ServeMux, build *ast.Build, manifestCurrent manifestView) {
+func registerViewAPI(mux *http.ServeMux, build *ast.Build, manifestCurrent manifestView, scope workspaceProgramScope) {
 	mux.HandleFunc("/api/view/program", func(w http.ResponseWriter, req *http.Request) {
 		params := GetProgramViewRequest{
 			IncludeCurrent: queryBoolPtr(req, "includeCurrent"),
 			IncludeDeps:    queryBoolPtr(req, "includeDeps"),
 			IncludeStd:     queryBoolPtr(req, "includeStd"),
 		}
-		writeJSON(w, filterProgramModules(view.ProjectProgram(*build), params))
+		program := scope.filterCurrentModule(view.ProjectProgram(*build))
+		writeJSON(w, filterProgramModules(program, params))
 	})
 
 	mux.HandleFunc("/api/view/file", func(w http.ResponseWriter, req *http.Request) {
@@ -237,6 +240,69 @@ type manifestView struct {
 	Raw     string            `json:"raw"`
 	Deps    map[string]string `json:"deps"`
 	Present bool              `json:"present"`
+}
+
+type workspaceProgramScope struct {
+	enabled          bool
+	allowedFilePaths map[string]struct{}
+}
+
+func detectWorkspaceProgramScope(workspacePath string) workspaceProgramScope {
+	filePaths := map[string]struct{}{}
+	_ = filepath.WalkDir(workspacePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) != ".neva" {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(workspacePath, path)
+		if relErr != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(filepath.Clean(rel))
+		filePaths[rel] = struct{}{}
+		filePaths[filepath.ToSlash(filepath.Join(filepath.Base(workspacePath), rel))] = struct{}{}
+		return nil
+	})
+
+	return workspaceProgramScope{
+		enabled:          len(filePaths) > 0,
+		allowedFilePaths: filePaths,
+	}
+}
+
+func (s workspaceProgramScope) filterCurrentModule(program view.Program) view.Program {
+	if !s.enabled {
+		return program
+	}
+
+	filtered := view.Program{Modules: make([]view.Module, 0, len(program.Modules))}
+	for _, module := range program.Modules {
+		if classifyModule(module.Path) != "current" {
+			filtered.Modules = append(filtered.Modules, module)
+			continue
+		}
+
+		moduleCopy := module
+		moduleCopy.Packages = slices.DeleteFunc(append([]view.Package(nil), module.Packages...), func(pkg view.Package) bool {
+			for _, fileSummary := range pkg.FileSummaries {
+				if _, ok := s.allowedFilePaths[filepath.ToSlash(filepath.Clean(fileSummary.Path))]; ok {
+					return false
+				}
+			}
+			return true
+		})
+
+		if len(moduleCopy.Packages) == 0 {
+			filtered.Modules = append(filtered.Modules, module)
+			continue
+		}
+		filtered.Modules = append(filtered.Modules, moduleCopy)
+	}
+
+	return filtered
 }
 
 func readManifestView(workspacePath string) manifestView {

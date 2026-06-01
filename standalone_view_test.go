@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nevalang/neva/pkg/view"
 )
 
 func TestQueryBoolPtr(t *testing.T) {
@@ -128,5 +130,69 @@ func TestEmbeddedWebDistFS_HasIndex(t *testing.T) {
 	}
 	if _, err := fsys.Open("index.html"); err != nil {
 		t.Fatalf("embedded ui index.html open error: %v", err)
+	}
+}
+
+func TestDetectWorkspaceProgramScope_FilterCurrentModuleBySubdir(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, "hello_world"), 0o755); err != nil {
+		t.Fatalf("mkdir hello_world: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "hello_world", "main.neva"), []byte("def Main(start any) (stop any) {}"), 0o644); err != nil {
+		t.Fatalf("write main.neva: %v", err)
+	}
+
+	scope := detectWorkspaceProgramScope(filepath.Join(workspace, "hello_world"))
+	program := view.Program{Modules: []view.Module{
+		{
+			Path: "@",
+			Packages: []view.Package{
+				{Name: "hello_world", FileSummaries: []view.FileSummary{{Path: "hello_world/main.neva"}}},
+				{Name: "other", FileSummaries: []view.FileSummary{{Path: "other/main.neva"}}},
+			},
+		},
+		{
+			Path: "std",
+			Packages: []view.Package{
+				{Name: "fmt", FileSummaries: []view.FileSummary{{Path: "fmt/main.neva"}}},
+			},
+		},
+	}}
+
+	filtered := scope.filterCurrentModule(program)
+	if len(filtered.Modules) != 2 {
+		t.Fatalf("module count=%d, want 2", len(filtered.Modules))
+	}
+	if len(filtered.Modules[0].Packages) != 1 {
+		t.Fatalf("current module package count=%d, want 1", len(filtered.Modules[0].Packages))
+	}
+	if filtered.Modules[0].Packages[0].Name != "hello_world" {
+		t.Fatalf("current module package=%q, want hello_world", filtered.Modules[0].Packages[0].Name)
+	}
+}
+
+func TestWorkspaceProgramScope_LeavesProgramWhenNoMatches(t *testing.T) {
+	t.Parallel()
+
+	scope := workspaceProgramScope{
+		enabled: true,
+		allowedFilePaths: map[string]struct{}{
+			"unrelated/main.neva": {},
+		},
+	}
+	program := view.Program{Modules: []view.Module{
+		{
+			Path: "@",
+			Packages: []view.Package{
+				{Name: "main", FileSummaries: []view.FileSummary{{Path: "main/main.neva"}}},
+			},
+		},
+	}}
+
+	filtered := scope.filterCurrentModule(program)
+	if len(filtered.Modules) != 1 || len(filtered.Modules[0].Packages) != 1 {
+		t.Fatal("expected original current module packages to be preserved")
 	}
 }
