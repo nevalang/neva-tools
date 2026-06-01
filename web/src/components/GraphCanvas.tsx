@@ -647,7 +647,12 @@ function componentDetailEdges(component: Component): Edge[] {
   return result
 }
 
-async function applyLayout(nodes: Node<NodeData>[], edges: Edge[], direction: 'DOWN' | 'RIGHT' = 'DOWN'): Promise<Node<NodeData>[]> {
+async function applyLayout(
+  nodes: Node<NodeData>[],
+  edges: Edge[],
+  direction: 'DOWN' | 'RIGHT' = 'DOWN',
+  measuredSizes?: Map<string, { width: number; height: number }>,
+): Promise<Node<NodeData>[]> {
   function estimatedPortPillWidth(port: Port): number {
     const nameWidth = (port.name?.length ?? 0) * 8
     const typeWidth = (port.type?.length ?? 0) * 7
@@ -675,14 +680,18 @@ async function applyLayout(nodes: Node<NodeData>[], edges: Edge[], direction: 'D
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': direction,
+      'elk.edgeRouting': 'ORTHOGONAL',
       'elk.spacing.nodeNode': '72',
       'elk.layered.spacing.nodeNodeBetweenLayers': '96',
       'elk.layered.spacing.edgeNodeBetweenLayers': '30',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.nodePlacement.favorStraightEdges': 'true',
+      'elk.layered.nodePlacement.bk.edgeStraightening': 'IMPROVE_STRAIGHTNESS',
     },
     children: nodes.map((node) => ({
       id: node.id,
-      width: layoutWidth(node),
-      height: layoutHeight(node),
+      width: measuredSizes?.get(node.id)?.width ?? layoutWidth(node),
+      height: measuredSizes?.get(node.id)?.height ?? layoutHeight(node),
     })),
     edges: edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
   }
@@ -699,6 +708,24 @@ async function applyLayout(nodes: Node<NodeData>[], edges: Edge[], direction: 'D
         y: placed?.y ?? 0,
       },
     }
+  })
+}
+
+function straightenMainVerticalChain(nodes: Node<NodeData>[]): Node<NodeData>[] {
+  const find = (suffix: string) => nodes.find((n) => n.id.endsWith(suffix))
+  const start = find('::in::start')
+  const lit = nodes.find((n) => n.data.kind === 'const')
+  const call = nodes.find((n) => n.id.includes('::node::') && n.data.kind === 'entity')
+  if (!start || !lit || !call) {
+    return nodes
+  }
+
+  const anchorX = call.position.x
+  return nodes.map((node) => {
+    if (node.id === start.id || node.id === lit.id || node.id === call.id) {
+      return { ...node, position: { ...node.position, x: anchorX } }
+    }
+    return node
   })
 }
 
@@ -731,6 +758,20 @@ function savePersistedLayout(key: string, payload: PersistedLayout) {
   } catch {
     // Ignore storage errors to avoid blocking graph interactions.
   }
+}
+
+function readMeasuredNodeSizes(nodeIDs: string[]): Map<string, { width: number; height: number }> {
+  const result = new Map<string, { width: number; height: number }>()
+  for (const id of nodeIDs) {
+    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"')
+    const element = document.querySelector(`.react-flow__node[data-id="${escaped}"]`) as HTMLElement | null
+    if (!element) continue
+    const rect = element.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      result.set(id, { width: rect.width, height: rect.height })
+    }
+  }
+  return result
 }
 
 export function GraphCanvas({
@@ -822,7 +863,16 @@ export function GraphCanvas({
         }
       }
 
-      const laidOut = await applyLayout(nextNodes, nextEdges, direction)
+      const measured = readMeasuredNodeSizes(nextNodes.map((node) => node.id))
+      let laidOut = await applyLayout(
+        nextNodes,
+        nextEdges,
+        direction,
+        measured.size > 0 ? measured : undefined,
+      )
+      if (route.kind === 'entity') {
+        laidOut = straightenMainVerticalChain(laidOut)
+      }
       if (!canceled) {
         const key = routeLayoutKey(route)
         const signature = nodeSignature(laidOut)
