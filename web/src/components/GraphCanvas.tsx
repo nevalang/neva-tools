@@ -16,7 +16,7 @@ import {
 } from '@xyflow/react'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { endpointPortName, inferImplicitPortName, parseSignaturePorts, shouldAddImplicitErrEdge, shouldAddImplicitInputEdge } from '../lib/graphSemantics'
-import { type AppRoute } from '../lib/appSemantics'
+import { isNativeComponent, type AppRoute } from '../lib/appSemantics'
 import type { Component, DINode, Endpoint, FileView, ModuleSummary, Port, ResolvedRef } from '../lib/types'
 import { routeToHash } from '../lib/routeCodec'
 
@@ -443,7 +443,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
       kind: 'nav' as const,
       navType: 'const' as const,
       label: item.name,
-      subtitle: 'const',
+      subtitle: item.anchor?.text?.trim() || 'const',
       showMeta: true,
       fileId: file.id,
       entityId: item.id,
@@ -729,6 +729,43 @@ function straightenMainVerticalChain(nodes: Node<NodeData>[]): Node<NodeData>[] 
   })
 }
 
+function reduceBranchCrossings(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] {
+  const call = nodes.find((n) => n.id.includes('::node::') && n.data.kind === 'entity')
+  if (!call) {
+    return nodes
+  }
+  const outPorts = call.data.outPorts ?? []
+  if (outPorts.length < 2) {
+    return nodes
+  }
+
+  const portIndex = new Map(outPorts.map((port, index) => [handleIDForPort(port.name), index]))
+  const branchTargets = edges
+    .filter((edge) => edge.source === call.id && edge.sourceHandle && edge.target !== call.id)
+    .map((edge) => ({ target: edge.target, index: portIndex.get(edge.sourceHandle || '') ?? Number.MAX_SAFE_INTEGER }))
+    .filter((item) => Number.isFinite(item.index))
+    .sort((a, b) => a.index - b.index)
+
+  if (branchTargets.length < 2) {
+    return nodes
+  }
+
+  const spacing = 260
+  const mid = (branchTargets.length - 1) / 2
+  const targetX = new Map<string, number>()
+  for (let i = 0; i < branchTargets.length; i++) {
+    targetX.set(branchTargets[i].target, call.position.x + (i - mid) * spacing)
+  }
+
+  return nodes.map((node) => {
+    const x = targetX.get(node.id)
+    if (x === undefined) {
+      return node
+    }
+    return { ...node, position: { ...node.position, x } }
+  })
+}
+
 type PersistedLayout = {
   signature: string
   positions: Record<string, { x: number; y: number }>
@@ -794,6 +831,7 @@ export function GraphCanvas({
   const [interactive, setInteractive] = useState(true)
   const [layoutKey, setLayoutKey] = useState<string | null>(null)
   const [layoutSignature, setLayoutSignature] = useState('')
+  const [layoutSeed, setLayoutSeed] = useState(0)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark'
@@ -872,11 +910,12 @@ export function GraphCanvas({
       )
       if (route.kind === 'entity') {
         laidOut = straightenMainVerticalChain(laidOut)
+        laidOut = reduceBranchCrossings(laidOut, nextEdges)
       }
       if (!canceled) {
         const key = routeLayoutKey(route)
         const signature = nodeSignature(laidOut)
-        const saved = loadPersistedLayout(key)
+        const saved = layoutSeed === 0 ? loadPersistedLayout(key) : null
         const withSavedPositions = saved && saved.signature === signature
           ? laidOut.map((node) => ({
             ...node,
@@ -896,7 +935,7 @@ export function GraphCanvas({
     return () => {
       canceled = true
     }
-  }, [modules, route, file])
+  }, [modules, route, file, layoutSeed])
 
   async function copyCurrentURL() {
     try {
@@ -939,6 +978,17 @@ export function GraphCanvas({
     savePersistedLayout(layoutKey, { signature: layoutSignature, positions })
   }
 
+  function resetCurrentLayout() {
+    if (layoutKey) {
+      try {
+        window.localStorage.removeItem(layoutKey)
+      } catch {
+        // Ignore storage errors.
+      }
+    }
+    setLayoutSeed((seed) => seed + 1)
+  }
+
   return (
     <section className="canvas-shell">
       <div className="canvas-overlay">
@@ -948,6 +998,14 @@ export function GraphCanvas({
             <button onClick={onGoForward} disabled={!canGoForward}>→</button>
           </div>
           <div className="canvas-nav-right">
+            <button
+              className="canvas-reset-layout"
+              onClick={resetCurrentLayout}
+              title="Reset node positions"
+              aria-label="Reset node positions"
+            >
+              Reset layout
+            </button>
             <button
               className="canvas-theme-toggle"
               onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
@@ -998,7 +1056,7 @@ export function GraphCanvas({
         }}
         onNodeClick={(_, node) => {
           const nextRoute = routeDown(route, node)
-          if (nextRoute) {
+          if (nextRoute && !(route.kind === 'file' && file && node.data.entityId && isNativeComponent(file, node.data.entityId))) {
             onNavigate(nextRoute, true)
             return
           }

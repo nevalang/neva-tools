@@ -14,12 +14,12 @@ function decodeSegment(value: string): string {
 
 function encodeModulePath(modulePath: string): string {
   if (modulePath === '@') return 'current'
-  return modulePath
+  return modulePath.replace(/@/g, '--')
 }
 
 function decodeModulePath(raw: string): string {
   if (raw === 'current' || raw === 'user') return '@'
-  return raw
+  return raw.replace(/--/g, '@')
 }
 
 function parseFileID(fileID: string): { modulePath: string; packageName: string; fileName: string } {
@@ -38,12 +38,12 @@ function composeFileID(modulePath: string, packageName: string, fileName: string
   return `module/${modulePath}/package/${packageName}/file/${fileName}`
 }
 
-function encodeEntityName(entityName: string): string {
-  return entityName.replace(/@(\d+)$/u, '~$1')
-}
-
-function decodeEntityName(entityName: string): string {
-  return entityName.replace(/~(\d+)$/u, '@$1')
+function splitEntityNameAndOverload(entityName: string): { baseName: string; overload: string | null } {
+  const match = entityName.match(/^(.*)@(\d+)$/u)
+  if (!match) {
+    return { baseName: entityName, overload: null }
+  }
+  return { baseName: match[1] ?? entityName, overload: match[2] ?? null }
 }
 
 function parseEntityID(entityID: string): { entityKind: string; entityName: string } {
@@ -84,10 +84,11 @@ export function parseHashRoute(hashRaw: string): AppRoute {
   if (segments.length === 3) return { kind: 'file', fileId }
 
   const entityKind = segments[3] ?? ''
-  const encodedEntityName = segments[4] ?? ''
-  if (!entityKind || !encodedEntityName) return { kind: 'file', fileId }
-  const entityName = decodeEntityName(encodedEntityName)
-  return { kind: 'entity', fileId, entityId: composeEntityID(fileId, entityKind, entityName) }
+  const entityName = segments[4] ?? ''
+  if (!entityKind || !entityName) return { kind: 'file', fileId }
+  const overload = segments[5] ?? ''
+  const canonicalName = overload ? `${entityName}@${overload}` : entityName
+  return { kind: 'entity', fileId, entityId: composeEntityID(fileId, entityKind, canonicalName) }
 }
 
 export function routeToHash(route: AppRoute): string {
@@ -110,5 +111,7 @@ export function routeToHash(route: AppRoute): string {
 
   const parts = parseFileID(route.fileId)
   const parsed = parseEntityID(route.entityId)
-  return `#/${encodeSegment(encodeModulePath(parts.modulePath))}/${encodeSegment(parts.packageName)}/${encodeSegment(parts.fileName)}/${encodeSegment(parsed.entityKind)}/${encodeSegment(encodeEntityName(parsed.entityName))}`
+  const split = splitEntityNameAndOverload(parsed.entityName)
+  const base = `#/${encodeSegment(encodeModulePath(parts.modulePath))}/${encodeSegment(parts.packageName)}/${encodeSegment(parts.fileName)}/${encodeSegment(parsed.entityKind)}/${encodeSegment(split.baseName)}`
+  return split.overload ? `${base}/${encodeSegment(split.overload)}` : base
 }
