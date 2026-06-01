@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GraphCanvas } from './components/GraphCanvas'
-import { inferInitialRoute, isNativeComponent, routeExistsInProgram, type AppRoute } from './lib/appSemantics'
+import { inferInitialRoute, routeExistsInProgram, type AppRoute } from './lib/appSemantics'
 import { parseHashRoute, routeToHash } from './lib/routeCodec'
 import { viewClient } from './lib/viewClient'
 import type { FileView, ModuleSummary } from './lib/types'
@@ -46,7 +46,7 @@ function routesEqual(a: Route, b: Route): boolean {
 }
 
 function routeFileID(route: Route): string | null {
-  if (route.kind === 'file' || route.kind === 'component') {
+  if (route.kind === 'file' || route.kind === 'entity') {
     return route.fileId
   }
   return null
@@ -68,7 +68,6 @@ export function App() {
   const [fileCache, setFileCache] = useState<Record<string, FileView>>({})
   const [backStack, setBackStack] = useState<Route[]>([])
   const [forwardStack, setForwardStack] = useState<Route[]>([])
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   useEffect(() => {
     void reloadProgram()
@@ -213,39 +212,21 @@ export function App() {
 
     const fileID = route.fileId
     const { modulePath, packageName } = parseFileID(fileID)
-    const componentName = displayEntityName(route.componentId)
+    const entityName = displayEntityName(route.entityId)
 
     return [
       { key: 'modules', label: 'modules', route: { kind: 'modules' } },
       { key: `module:${modulePath}`, label: displayModuleLabel(modulePath), route: { kind: 'module', modulePath } },
       { key: `package:${modulePath}:${packageName}`, label: packageName, route: { kind: 'package', modulePath, packageName } },
       { key: `file:${fileID}`, label: fileDisplayName(fileID), route: { kind: 'file', fileId: fileID } },
-      { key: `component:${route.componentId}`, label: componentName, route },
+      { key: `entity:${route.entityId}`, label: entityName, route },
     ]
   }, [route])
 
   async function resolveAndOpen(target: { fileId: string; entityId: string }) {
     const result = await viewClient.resolveEntityRef(target.fileId, target.entityId)
-    const nextRoute: Route = { kind: 'file', fileId: result.targetFileId }
+    const nextRoute: Route = { kind: 'entity', fileId: result.targetFileId, entityId: result.targetEntityId }
     navigate(nextRoute, true)
-  }
-
-  function showToast(message: string) {
-    setToastMessage(message)
-    window.setTimeout(() => setToastMessage((current) => (current === message ? null : current)), 2600)
-  }
-
-  function handleNativeComponentClick(target: { fileId: string; entityId: string }) {
-    const file = fileCache[target.fileId]
-    if (!file) {
-      showToast('No Neva graph implementation for this component.')
-      return
-    }
-    if (isNativeComponent(file, target.entityId)) {
-      showToast('This component is runtime/native-only in Neva (no inner graph to open).')
-      return
-    }
-    showToast('Component graph is not available.')
   }
 
   return (
@@ -261,9 +242,7 @@ export function App() {
         onGoForward={goForward}
         onNavigate={navigate}
         onResolveOpen={resolveAndOpen}
-        onNativeComponentClick={handleNativeComponentClick}
       />
-      {toastMessage ? <div className="canvas-toast">{toastMessage}</div> : null}
     </main>
   )
 }

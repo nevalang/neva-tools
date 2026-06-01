@@ -5,7 +5,7 @@ export type AppRoute =
   | { kind: 'module'; modulePath: string }
   | { kind: 'package'; modulePath: string; packageName: string }
   | { kind: 'file'; fileId: string }
-  | { kind: 'component'; fileId: string; componentId: string }
+  | { kind: 'entity'; fileId: string; entityId: string }
 
 export function inferInitialRoute(modules: ModuleSummary[]): AppRoute {
   if (modules.length === 0) {
@@ -38,7 +38,7 @@ export function routeExistsInProgram(route: AppRoute, modules: ModuleSummary[]):
     return Boolean(moduleItem?.packages.some((pkg) => pkg.name === route.packageName))
   }
 
-  if (route.kind === 'file' || route.kind === 'component') {
+  if (route.kind === 'file' || route.kind === 'entity') {
     return modules.some((moduleItem) =>
       moduleItem.packages.some((pkg) =>
         pkg.fileSummaries.some((fileSummary) => fileSummary.id === route.fileId),

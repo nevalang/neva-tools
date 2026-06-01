@@ -26,15 +26,14 @@ describe('routeCodec', () => {
     })
   })
 
-  it('keeps component route explicit as trailing segment', () => {
+  it('keeps entity route explicit as trailing segment', () => {
     const route = {
-      kind: 'component' as const,
+      kind: 'entity' as const,
       fileId: 'module/@/package/hello_world/file/main',
-      componentId: 'module/@/package/hello_world/file/main/component/Main@0',
+      entityId: 'module/@/package/hello_world/file/main/component/Main@0',
     }
     const hash = routeToHash(route)
     expect(hash).toBe('#/current/hello_world/main/module%2F%40%2Fpackage%2Fhello_world%2Ffile%2Fmain%2Fcomponent%2FMain%400')
     expect(parseHashRoute(hash)).toEqual(route)
   })
 })
-

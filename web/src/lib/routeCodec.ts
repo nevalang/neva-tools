@@ -62,9 +62,9 @@ export function parseHashRoute(hashRaw: string): AppRoute {
   const fileId = composeFileID(modulePath, packageName, fileName)
   if (segments.length === 3) return { kind: 'file', fileId }
 
-  const componentId = segments.slice(3).join('/')
-  if (!componentId) return { kind: 'file', fileId }
-  return { kind: 'component', fileId, componentId }
+  const entityId = segments.slice(3).join('/')
+  if (!entityId) return { kind: 'file', fileId }
+  return { kind: 'entity', fileId, entityId }
 }
 
 export function routeToHash(route: AppRoute): string {
@@ -86,6 +86,5 @@ export function routeToHash(route: AppRoute): string {
   }
 
   const parts = parseFileID(route.fileId)
-  return `#/${encodeSegment(encodeModulePath(parts.modulePath))}/${encodeSegment(parts.packageName)}/${encodeSegment(parts.fileName)}/${encodeSegment(route.componentId)}`
+  return `#/${encodeSegment(encodeModulePath(parts.modulePath))}/${encodeSegment(parts.packageName)}/${encodeSegment(parts.fileName)}/${encodeSegment(route.entityId)}`
 }
-

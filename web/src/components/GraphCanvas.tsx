@@ -14,14 +14,10 @@ import {
 } from '@xyflow/react'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { endpointPortName, inferImplicitPortName, parseSignaturePorts, shouldAddImplicitErrEdge, shouldAddImplicitInputEdge } from '../lib/graphSemantics'
+import { type AppRoute } from '../lib/appSemantics'
 import type { Component, DINode, Endpoint, FileView, ModuleSummary, Port, ResolvedRef } from '../lib/types'
 
-type Route =
-  | { kind: 'modules' }
-  | { kind: 'module'; modulePath: string }
-  | { kind: 'package'; modulePath: string; packageName: string }
-  | { kind: 'file'; fileId: string }
-  | { kind: 'component'; fileId: string; componentId: string }
+type Route = AppRoute
 
 type Breadcrumb = {
   key: string
@@ -40,7 +36,6 @@ type Props = {
   onGoForward: () => void
   onNavigate: (route: Route, trackNav?: boolean) => void
   onResolveOpen: (target: { fileId: string; entityId: string }) => Promise<void>
-  onNativeComponentClick: (target: { fileId: string; entityId: string }) => void
 }
 
 type NodeData = {
@@ -58,7 +53,6 @@ type NodeData = {
   entityId?: string
   modulePath?: string
   packageName?: string
-  componentId?: string
 }
 
 const elk = new ELK()
@@ -384,11 +378,11 @@ function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: 
   return result
 }
 
-function fileEntityNodes(file: FileView): Node<NodeData>[] {
+function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeData>[] {
   const components = file.components.map((component) => ({
     id: `entity:${component.id}`,
     type: 'entityNode' as const,
-    className: canDrillComponent(component) ? 'rf-node-clickable rf-node-kind-component' : 'rf-node-kind-component',
+    className: `${canDrillComponent(component) ? 'rf-node-clickable ' : ''}rf-node-kind-component${component.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
     data: {
       kind: 'nav' as const,
@@ -398,7 +392,6 @@ function fileEntityNodes(file: FileView): Node<NodeData>[] {
       showMeta: true,
       fileId: file.id,
       entityId: component.id,
-      componentId: component.id,
       inPorts: component.inPorts,
       outPorts: component.outPorts,
     },
@@ -407,7 +400,7 @@ function fileEntityNodes(file: FileView): Node<NodeData>[] {
   const interfaces = file.interfaces.map((iface) => ({
     id: `entity:${iface.id}`,
     type: 'entityNode' as const,
-    className: 'rf-node-kind-interface',
+    className: `rf-node-clickable rf-node-kind-interface${iface.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
     data: {
       kind: 'nav' as const,
@@ -425,7 +418,7 @@ function fileEntityNodes(file: FileView): Node<NodeData>[] {
   const types = file.types.map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
-    className: 'rf-node-kind-type',
+    className: `rf-node-clickable rf-node-kind-type${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
     data: {
       kind: 'nav' as const,
@@ -441,7 +434,7 @@ function fileEntityNodes(file: FileView): Node<NodeData>[] {
   const consts = file.consts.map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
-    className: 'rf-node-kind-const',
+    className: `rf-node-clickable rf-node-kind-const${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
     data: {
       kind: 'nav' as const,
@@ -717,7 +710,6 @@ export function GraphCanvas({
   onGoForward,
   onNavigate,
   onResolveOpen,
-  onNativeComponentClick,
 }: Props) {
   const [nodes, setNodes] = useState<Node<NodeData>[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
@@ -774,20 +766,22 @@ export function GraphCanvas({
         nextNodes = fileEntityNodes(file)
       }
 
-      if (route.kind === 'component') {
+      if (route.kind === 'entity') {
         if (!file) {
           setNodes([])
           setEdges([])
           return
         }
 
-        const component = file.components.find((item) => item.id === route.componentId)
-        if (component) {
+        const component = file.components.find((item) => item.id === route.entityId)
+        if (component && canDrillComponent(component)) {
           nextNodes = componentDetailNodes(component, true, (target) => {
-            onNavigate({ kind: 'component', fileId: target.fileId, componentId: target.entityId }, true)
+            onNavigate({ kind: 'entity', fileId: target.fileId, entityId: target.entityId }, true)
           })
           nextEdges = componentDetailEdges(component)
           direction = 'DOWN'
+        } else {
+          nextNodes = fileEntityNodes(file, route.entityId)
         }
       }
 
@@ -825,11 +819,8 @@ export function GraphCanvas({
     if (current.kind === 'package' && node.data.fileId) {
       return { kind: 'file', fileId: node.data.fileId }
     }
-    if (current.kind === 'file' && node.data.navType === 'component' && node.data.fileId && node.data.componentId) {
-      const component = file?.components.find((item) => item.id === node.data.componentId)
-      if (component && canDrillComponent(component)) {
-        return { kind: 'component', fileId: node.data.fileId, componentId: node.data.componentId }
-      }
+    if (current.kind === 'file' && node.data.fileId && node.data.entityId) {
+      return { kind: 'entity', fileId: node.data.fileId, entityId: node.data.entityId }
     }
     return null
   }
@@ -890,11 +881,7 @@ export function GraphCanvas({
             onNavigate(nextRoute, true)
             return
           }
-          if (route.kind === 'file' && node.data.navType === 'component' && node.data.fileId && node.data.entityId) {
-            onNativeComponentClick({ fileId: node.data.fileId, entityId: node.data.entityId })
-            return
-          }
-          if (route.kind === 'component' && node.data.fileId && node.data.entityId) {
+          if (route.kind === 'entity' && node.data.fileId && node.data.entityId) {
             void onResolveOpen({ fileId: node.data.fileId, entityId: node.data.entityId })
           }
         }}
