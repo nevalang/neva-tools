@@ -10,10 +10,15 @@
   --strong-border: #8b949f;
   --hover-border: #5f9dcf;
   --shadow-hover: 0 10px 24px rgba(15, 23, 42, 0.14);
-  --accent-warm: #c58b52;
-  --accent-cool: #5f9dcf;
+  --kind-module: #5f8fc8;
+  --kind-package: #d28b46;
+  --kind-file: #6fa98b;
+  --kind-component: #c99646;
+  --kind-interface: #5c86c8;
+  --kind-type: #4fa693;
+  --kind-const: #c96e56;
   --minimap-node: #9aa3ad;
-  --minimap-node-clickable: #c58b52;
+  --minimap-node-clickable: #c99646;
   --minimap-node-stroke: #4a4f57;
   --minimap-mask: rgba(245, 245, 245, 0.7);
 }
@@ -29,10 +34,15 @@
   --strong-border: #6f7785;
   --hover-border: #61afef;
   --shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.4);
-  --accent-warm: #d19a66;
-  --accent-cool: #61afef;
+  --kind-module: #7daddb;
+  --kind-package: #e0a55f;
+  --kind-file: #86c0a1;
+  --kind-component: #dfad65;
+  --kind-interface: #78a3df;
+  --kind-type: #64c1ab;
+  --kind-const: #d98269;
   --minimap-node: #7d8694;
-  --minimap-node-clickable: #d19a66;
+  --minimap-node-clickable: #dfad65;
   --minimap-node-stroke: #c9ced6;
   --minimap-mask: rgba(26, 29, 36, 0.58);
 }
@@ -303,9 +313,23 @@ button:disabled {
   box-sizing: border-box;
 }
 
+.rf-node-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .rf-node-title {
   font-size: 14px;
   font-weight: 700;
+}
+
+.rf-node-inline-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .rf-node-subtitle {
@@ -313,6 +337,14 @@ button:disabled {
   color: var(--text-muted);
   margin-top: 4px;
   word-break: break-all;
+}
+
+.rf-node-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--text-muted) 92%, var(--text));
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .rf-di-list {
@@ -325,9 +357,9 @@ button:disabled {
 .rf-di-node {
   width: 100%;
   min-height: 26px;
-  border: 1px solid color-mix(in srgb, var(--accent-warm) 38%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--kind-const) 38%, var(--border));
   border-radius: 7px;
-  background: color-mix(in srgb, var(--accent-warm) 12%, var(--surface));
+  background: color-mix(in srgb, var(--kind-const) 12%, var(--surface));
   color: var(--text);
   display: inline-flex;
   align-items: center;
@@ -348,8 +380,8 @@ button:disabled {
 }
 
 .rf-di-node-clickable:hover {
-  border-color: color-mix(in srgb, var(--accent-warm) 64%, var(--hover-border));
-  background: color-mix(in srgb, var(--accent-warm) 18%, var(--surface));
+  border-color: color-mix(in srgb, var(--kind-const) 64%, var(--hover-border));
+  background: color-mix(in srgb, var(--kind-const) 18%, var(--surface));
 }
 
 .rf-di-slot {
@@ -368,11 +400,11 @@ button:disabled {
 }
 
 .rf-node-port-row-top {
-  border-bottom: 1px solid color-mix(in srgb, var(--accent-cool) 42%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--kind-interface) 42%, var(--border));
 }
 
 .rf-node-port-row-bottom {
-  border-top: 1px solid color-mix(in srgb, var(--accent-warm) 46%, var(--border));
+  border-top: 1px solid color-mix(in srgb, var(--kind-const) 46%, var(--border));
 }
 
 .rf-port-pill {
@@ -390,7 +422,7 @@ button:disabled {
 }
 
 .rf-port-pill-top {
-  background: color-mix(in srgb, var(--accent-cool) 14%, var(--surface));
+  background: color-mix(in srgb, var(--kind-interface) 14%, var(--surface));
 }
 
 .rf-node-port-row-top .rf-port-pill-top:first-child {
@@ -402,11 +434,11 @@ button:disabled {
 }
 
 .rf-node-port-row-top .rf-port-pill-top:not(:last-child) {
-  border-right: 1px solid color-mix(in srgb, var(--accent-cool) 42%, var(--border));
+  border-right: 1px solid color-mix(in srgb, var(--kind-interface) 42%, var(--border));
 }
 
 .rf-port-pill-bottom {
-  background: color-mix(in srgb, var(--accent-warm) 16%, var(--surface));
+  background: color-mix(in srgb, var(--kind-const) 16%, var(--surface));
 }
 
 .rf-node-port-row-bottom .rf-port-pill-bottom:first-child {
@@ -418,7 +450,7 @@ button:disabled {
 }
 
 .rf-node-port-row-bottom .rf-port-pill-bottom:not(:last-child) {
-  border-right: 1px solid color-mix(in srgb, var(--accent-warm) 46%, var(--border));
+  border-right: 1px solid color-mix(in srgb, var(--kind-const) 46%, var(--border));
 }
 
 .rf-port-name {
@@ -456,7 +488,7 @@ button:disabled {
   min-height: 72px;
   border-radius: 3px;
   border: 1px solid var(--strong-border);
-  background: color-mix(in srgb, var(--accent-warm) 10%, var(--surface));
+  background: color-mix(in srgb, var(--kind-const) 10%, var(--surface));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -527,29 +559,29 @@ button:disabled {
 }
 
 .react-flow__node.rf-node-kind-module .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, var(--accent-cool) 58%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-module) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-package .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, var(--accent-warm) 56%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-package) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-file .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, #8ac6a5 56%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-file) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-component .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, var(--accent-warm) 46%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-component) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-interface .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, var(--accent-cool) 48%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-interface) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-type .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, #8ac6a5 48%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-type) 72%, var(--strong-border));
 }
 
 .react-flow__node.rf-node-kind-const .rf-node-frame {
-  border-left: 2px solid color-mix(in srgb, var(--accent-warm) 64%, var(--strong-border));
+  border-left: 2px solid color-mix(in srgb, var(--kind-const) 74%, var(--strong-border));
 }

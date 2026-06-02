@@ -29,6 +29,10 @@ describe('GraphCanvas helpers', () => {
       'ZType',
       'Answer',
     ])
+
+    const constNode = fileEntityNodes(file).find((node) => node.data.label === 'Answer')
+    expect(constNode?.data.subtitle).toBe('int')
+    expect(constNode?.data.detail).toBe('42')
   })
 
   it('lays out a two-call component pipeline by port order', () => {

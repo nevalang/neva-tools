@@ -48,6 +48,7 @@ export type NodeData = {
   portRole?: 'in' | 'out'
   label: string
   subtitle?: string
+  detail?: string
   showMeta?: boolean
   inPorts?: Port[]
   outPorts?: Port[]
@@ -63,6 +64,26 @@ const elk = new ELK()
 const THEME_STORAGE_KEY = 'neva-lsp:theme'
 const SNAP_GRID_STORAGE_KEY = 'neva-lsp:snap-grid'
 const GRAPH_SNAP_GRID: [number, number] = [24, 24]
+
+const LIGHT_KIND_COLORS = {
+  module: '#5f8fc8',
+  package: '#d28b46',
+  file: '#6fa98b',
+  component: '#c99646',
+  interface: '#5c86c8',
+  type: '#4fa693',
+  const: '#c96e56',
+} as const
+
+const DARK_KIND_COLORS = {
+  module: '#7daddb',
+  package: '#e0a55f',
+  file: '#86c0a1',
+  component: '#dfad65',
+  interface: '#78a3df',
+  type: '#64c1ab',
+  const: '#d98269',
+} as const
 
 function handleOffsets(count: number): string[] {
   if (count <= 0) {
@@ -80,6 +101,8 @@ function handleIDForPort(portName: string): string {
 }
 
 function EntityNode({ data }: NodeProps<Node<NodeData>>) {
+  const isConstEntity = data.kind === 'nav' && data.navType === 'const'
+
   if (data.kind === 'const') {
     return (
       <div className="rf-const-node">
@@ -139,8 +162,20 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
           </div>
         )}
         <div className="rf-node-body">
-          <div className="rf-node-title">{data.label}</div>
-          {data.showMeta && data.subtitle && <div className="rf-node-subtitle">{data.subtitle}</div>}
+          {isConstEntity ? (
+            <>
+              <div className="rf-node-header">
+                <div className="rf-node-title">{data.label}</div>
+                {data.subtitle ? <div className="rf-node-inline-meta">{data.subtitle}</div> : null}
+              </div>
+              {data.detail ? <div className="rf-node-detail">{data.detail}</div> : null}
+            </>
+          ) : (
+            <>
+              <div className="rf-node-title">{data.label}</div>
+              {data.showMeta && data.subtitle && <div className="rf-node-subtitle">{data.subtitle}</div>}
+            </>
+          )}
           {diArgs.length > 0 ? (
             <div className="rf-di-list" aria-label="Dependency injections">
               {diArgs.map((diArg) => {
@@ -245,13 +280,14 @@ function constNodeID(componentID: string, endpoint: Endpoint): string {
 
 function minimapNodeFill(node: Node<NodeData>, theme: 'light' | 'dark'): string {
   const navType = node.data?.navType
-  if (navType === 'module') return theme === 'dark' ? '#7ea8cf' : '#356287'
-  if (navType === 'package') return theme === 'dark' ? '#d8ad7f' : '#8c5a2f'
-  if (navType === 'file') return theme === 'dark' ? '#93c8a3' : '#326f56'
-  if (navType === 'component') return theme === 'dark' ? '#e3ba8d' : '#9a6734'
-  if (navType === 'interface') return theme === 'dark' ? '#94b6dd' : '#44698e'
-  if (navType === 'type') return theme === 'dark' ? '#86bfd6' : '#2f6f97'
-  if (navType === 'const') return theme === 'dark' ? '#e6c58a' : '#8a5a2a'
+  const palette = theme === 'dark' ? DARK_KIND_COLORS : LIGHT_KIND_COLORS
+  if (navType === 'module') return palette.module
+  if (navType === 'package') return palette.package
+  if (navType === 'file') return palette.file
+  if (navType === 'component') return palette.component
+  if (navType === 'interface') return palette.interface
+  if (navType === 'type') return palette.type
+  if (navType === 'const') return palette.const
   return theme === 'dark' ? '#9ca6b5' : '#566276'
 }
 
@@ -374,11 +410,12 @@ function typePreview(item: TypeDecl): string {
   return `${kind}${args}`
 }
 
-function constPreview(item: ConstDecl): string {
-  const type = item.type?.trim()
-  const value = item.value?.trim()
-  if (type && value) return `${type} = ${value}`
-  return type || value || item.anchor?.text?.trim() || 'const'
+function constTypePreview(item: ConstDecl): string {
+  return item.type?.trim() || item.anchor?.text?.trim() || 'const'
+}
+
+function constValuePreview(item: ConstDecl): string {
+  return item.value?.trim() || ''
 }
 
 function sortByName<T extends { name: string }>(items: T[]): T[] {
@@ -420,6 +457,7 @@ function estimatedPortPillWidth(port: Port): number {
 function fallbackNodeWidth(node: Node<NodeData>): number {
   if (node.data.kind === 'port') return 88
   if (node.data.kind === 'const') return 92
+  if (node.data.kind === 'nav' && node.data.navType === 'const') return 280
 
   const inWidth = (node.data.inPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
   const outWidth = (node.data.outPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
@@ -429,6 +467,7 @@ function fallbackNodeWidth(node: Node<NodeData>): number {
 function fallbackNodeHeight(node: Node<NodeData>): number {
   if (node.data.kind === 'port') return 70
   if (node.data.kind === 'const') return 72
+  if (node.data.kind === 'nav' && node.data.navType === 'const') return 112
   return 120 + (node.data.diArgs?.length ?? 0) * 30
 }
 
@@ -498,7 +537,8 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
       kind: 'nav' as const,
       navType: 'const' as const,
       label: item.name,
-      subtitle: constPreview(item),
+      subtitle: constTypePreview(item),
+      detail: constValuePreview(item),
       showMeta: true,
       fileId: file.id,
       entityId: item.id,
@@ -1411,8 +1451,8 @@ export function GraphCanvas({
         >
           <ControlButton
             onClick={resetCurrentLayout}
-            title="Reset node positions"
-            aria-label="Reset node positions"
+            title="Reset saved layout"
+            aria-label="Reset saved layout"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 4h6v6H4V4Zm2 2v2h2V6H6Zm8-2h6v6h-6V4Zm2 2v2h2V6h-2ZM4 14h6v6H4v-6Zm2 2v2h2v-2H6Zm9-1h2v2h-2v-2Zm3 3h2v2h-2v-2Zm-4 0h2v2h-2v-2Zm4-4h2v2h-2v-2Z" />
