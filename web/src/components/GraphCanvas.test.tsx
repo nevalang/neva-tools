@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from '@xyflow/react'
-import { fileEntityNodes, layoutComponentPipeline, shouldUseMeasuredLayoutSizes, type NodeData } from './GraphCanvas'
+import { catalogColumnCount, fileEntityNodes, layoutCatalogGrid, layoutComponentPipeline, shouldUseMeasuredLayoutSizes, type NodeData } from './GraphCanvas'
 import type { FileView } from '../lib/types'
 
 describe('GraphCanvas helpers', () => {
@@ -36,18 +36,55 @@ describe('GraphCanvas helpers', () => {
     const constNode = nodes.find((node) => node.data.label === 'Answer')
     expect(constNode?.data.subtitle).toBe('const · int')
     expect(constNode?.data.detail).toBe('42')
-    expect(constNode?.style?.width).toBe(380)
+    expect(constNode?.style?.width).toBe(280)
     const typeNode = nodes.find((node) => node.data.label === 'AType')
     expect(typeNode?.data.subtitle).toBe('type · string')
-    expect(typeNode?.style?.width).toBe(300)
+    expect(typeNode?.style?.width).toBe(280)
   })
 
   it('uses measured DOM sizes only for entity graphs', () => {
-    expect(shouldUseMeasuredLayoutSizes({ kind: 'modules' })).toBe(false)
-    expect(shouldUseMeasuredLayoutSizes({ kind: 'module', modulePath: '@' })).toBe(false)
-    expect(shouldUseMeasuredLayoutSizes({ kind: 'package', modulePath: '@', packageName: 'const_refs' })).toBe(false)
-    expect(shouldUseMeasuredLayoutSizes({ kind: 'file', fileId: 'module/@/package/const_refs/file/main' })).toBe(false)
-    expect(shouldUseMeasuredLayoutSizes({ kind: 'entity', fileId: 'module/@/package/const_refs/file/main', entityId: 'module/@/package/const_refs/file/main/component/Main@0' })).toBe(true)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'modules' }, 0)).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'module', modulePath: '@' }, 0)).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'package', modulePath: '@', packageName: 'const_refs' }, 0)).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'file', fileId: 'module/@/package/const_refs/file/main' }, 0)).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'entity', fileId: 'module/@/package/const_refs/file/main', entityId: 'module/@/package/const_refs/file/main/component/Main@0' }, 0)).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'entity', fileId: 'module/@/package/const_refs/file/main', entityId: 'module/@/package/const_refs/file/main/component/Main@0' }, 3)).toBe(true)
+  })
+
+  it('formats structured const values and lays file entities out without overlap', () => {
+    const file: FileView = {
+      id: 'module/@/package/const_refs/file/main',
+      name: 'main',
+      imports: [],
+      components: [
+        { id: 'c-main', name: 'Main', inPorts: [{ name: 'start', type: 'any' }], outPorts: [{ name: 'stop', type: 'any' }], nodes: [], connections: [] },
+      ],
+      interfaces: [],
+      types: [{ id: 't-nums', name: 'NumsStruct', type: '<> = { d dict<int>, l list<int> }' }],
+      consts: [
+        { id: 'k-list', name: 'numsList', type: 'list<int>', value: '[one, two, three]' },
+        { id: 'k-map', name: 'numsMap', type: 'dict<int>', value: '{"key": one}' },
+        {
+          id: 'k-struct',
+          name: 'numsStruct',
+          type: 'NumsStruct',
+          value: '{"d": numsMap"l": numsList}',
+          anchor: { text: 'numsStructNumsStruct={\nl:numsList,\nd:numsMap\n}\n' },
+        },
+        { id: 'k-one', name: 'one', type: 'int', value: '1' },
+      ],
+    }
+
+    const nodes = fileEntityNodes(file)
+    const numsStruct = nodes.find((node) => node.data.label === 'numsStruct')
+    expect(numsStruct?.data.detail).toBe('{\n  l: numsList,\n  d: numsMap\n}')
+
+    expect(catalogColumnCount({ kind: 'file', fileId: file.id }, nodes)).toBe(2)
+    const laidOut = layoutCatalogGrid(nodes, 2)
+    const first = laidOut.find((node) => node.data.label === 'Main')!
+    const third = laidOut.find((node) => node.data.label === 'numsList')!
+    expect(third.position.y).toBeGreaterThan(first.position.y)
+    expect(third.position.y).toBeGreaterThanOrEqual(first.position.y + 150)
   })
 
   it('lays out a two-call component pipeline by port order', () => {

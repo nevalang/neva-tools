@@ -113,6 +113,205 @@ function snapGridLabel(level: number): string {
   return size <= 0 ? 'Off' : `${size}px`
 }
 
+function compactPreviewWhitespace(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim()
+}
+
+function structuredPreviewBoundary(text: string, index: number): boolean {
+  return /^"[^"]+"\s*:/.test(text.slice(index)) || /^[A-Za-z_][A-Za-z0-9_]*\s*:/.test(text.slice(index))
+}
+
+function normalizeStructuredKey(key: string): string {
+  const compact = key.trim()
+  const quotedIdentifier = compact.match(/^"([A-Za-z_][A-Za-z0-9_]*)"$/u)
+  if (quotedIdentifier) {
+    return quotedIdentifier[1]
+  }
+  return compact
+}
+
+function parseStructuredObjectEntries(value: string): Array<{ key: string; value: string }> | null {
+  const compact = value.trim()
+  if (!compact.startsWith('{') || !compact.endsWith('}')) {
+    return null
+  }
+
+  const inner = compact.slice(1, -1)
+  const entries: Array<{ key: string; value: string }> = []
+  let cursor = 0
+
+  while (cursor < inner.length) {
+    while (cursor < inner.length && /[\s,]/u.test(inner[cursor])) {
+      cursor += 1
+    }
+    if (cursor >= inner.length) break
+
+    const keyStart = cursor
+    let key = ''
+    if (inner[cursor] === '"') {
+      cursor += 1
+      while (cursor < inner.length) {
+        if (inner[cursor] === '"' && inner[cursor - 1] !== '\\') {
+          cursor += 1
+          break
+        }
+        cursor += 1
+      }
+      key = inner.slice(keyStart, cursor)
+    } else {
+      while (cursor < inner.length && inner[cursor] !== ':' && !/\s/u.test(inner[cursor])) {
+        cursor += 1
+      }
+      key = inner.slice(keyStart, cursor)
+      while (cursor < inner.length && /\s/u.test(inner[cursor])) {
+        cursor += 1
+      }
+    }
+
+    if (inner[cursor] !== ':') {
+      return null
+    }
+    cursor += 1
+    while (cursor < inner.length && /\s/u.test(inner[cursor])) {
+      cursor += 1
+    }
+
+    const valueStart = cursor
+    let depth = 0
+    let inString = false
+    while (cursor < inner.length) {
+      const ch = inner[cursor]
+      if (inString) {
+        if (ch === '"' && inner[cursor - 1] !== '\\') {
+          inString = false
+        }
+        cursor += 1
+        continue
+      }
+      if (ch === '"') {
+        if (depth === 0 && structuredPreviewBoundary(inner, cursor)) {
+          break
+        }
+        inString = true
+        cursor += 1
+        continue
+      }
+      if (ch === '{' || ch === '[' || ch === '(') {
+        depth += 1
+        cursor += 1
+        continue
+      }
+      if (ch === '}' || ch === ']' || ch === ')') {
+        depth = Math.max(0, depth - 1)
+        cursor += 1
+        continue
+      }
+      if (depth === 0 && ch === ',') {
+        break
+      }
+      if (depth === 0 && structuredPreviewBoundary(inner, cursor)) {
+        break
+      }
+      cursor += 1
+    }
+
+    const entryValue = inner.slice(valueStart, cursor).trim().replace(/,$/u, '')
+    entries.push({ key: normalizeStructuredKey(key), value: entryValue })
+    if (inner[cursor] === ',') {
+      cursor += 1
+    }
+  }
+
+  return entries
+}
+
+function splitStructuredListItems(value: string): string[] | null {
+  const compact = value.trim()
+  if (!compact.startsWith('[') || !compact.endsWith(']')) {
+    return null
+  }
+
+  const inner = compact.slice(1, -1)
+  const items: string[] = []
+  let cursor = 0
+  let start = 0
+  let depth = 0
+  let inString = false
+
+  while (cursor < inner.length) {
+    const ch = inner[cursor]
+    if (inString) {
+      if (ch === '"' && inner[cursor - 1] !== '\\') {
+        inString = false
+      }
+      cursor += 1
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      cursor += 1
+      continue
+    }
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth += 1
+      cursor += 1
+      continue
+    }
+    if (ch === '}' || ch === ']' || ch === ')') {
+      depth = Math.max(0, depth - 1)
+      cursor += 1
+      continue
+    }
+    if (depth === 0 && ch === ',') {
+      items.push(inner.slice(start, cursor).trim())
+      cursor += 1
+      while (cursor < inner.length && /\s/u.test(inner[cursor])) {
+        cursor += 1
+      }
+      start = cursor
+      continue
+    }
+    cursor += 1
+  }
+
+  const tail = inner.slice(start).trim()
+  if (tail) {
+    items.push(tail)
+  }
+  return items
+}
+
+function formatStructuredValue(value: string): string {
+  const compact = compactPreviewWhitespace(value)
+  const objectEntries = parseStructuredObjectEntries(compact)
+  if (objectEntries && objectEntries.length > 0) {
+    const inline = `{ ${objectEntries.map((entry) => `${entry.key}: ${compactPreviewWhitespace(entry.value)}`).join(', ')} }`
+    if (inline.length <= 32 && objectEntries.length <= 1) {
+      return inline
+    }
+    return [
+      '{',
+      ...objectEntries.map((entry, index) => `  ${entry.key}: ${compactPreviewWhitespace(entry.value)}${index < objectEntries.length - 1 ? ',' : ''}`),
+      '}',
+    ].join('\n')
+  }
+
+  const listItems = splitStructuredListItems(compact)
+  if (listItems && listItems.length > 0) {
+    const inline = `[${listItems.map(compactPreviewWhitespace).join(', ')}]`
+    if (inline.length <= 32 && listItems.length <= 3) {
+      return inline
+    }
+    return [
+      '[',
+      ...listItems.map((item, index) => `  ${compactPreviewWhitespace(item)}${index < listItems.length - 1 ? ',' : ''}`),
+      ']',
+    ].join('\n')
+  }
+
+  return compact
+}
+
 function EntityNode({ data }: NodeProps<Node<NodeData>>) {
   if (data.kind === 'const') {
     return (
@@ -417,8 +616,19 @@ function constTypePreview(item: ConstDecl): string {
   return item.type?.trim() || item.anchor?.text?.trim() || 'const'
 }
 
-function constValuePreview(item: ConstDecl): string {
+function constValueSource(item: ConstDecl): string {
+  const anchorText = item.anchor?.text?.trim()
+  if (anchorText) {
+    const eqIndex = anchorText.indexOf('=')
+    if (eqIndex >= 0) {
+      return anchorText.slice(eqIndex + 1).trim()
+    }
+  }
   return item.value?.trim() || ''
+}
+
+function constValuePreview(item: ConstDecl): string {
+  return formatStructuredValue(constValueSource(item))
 }
 
 function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: Map<string, string>): Port[] {
@@ -469,25 +679,29 @@ function numericNodeWidth(value: unknown): number | null {
 function estimatedWrappedLines(text: string | undefined, width: number): number {
   if (!text) return 0
   const charsPerLine = Math.max(18, Math.floor((width - 28) / 7))
-  return Math.max(1, Math.ceil(text.length / charsPerLine))
+  return Math.max(
+    1,
+    text
+      .split('\n')
+      .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charsPerLine)), 0),
+  )
 }
 
 function fileEntityNodeWidth(node: Node<NodeData>): number {
-  const navType = node.data.navType
-  if (navType === 'const') {
-    return 380
-  }
-  if (navType === 'component') {
-    return 320
-  }
-  return 300
+  const detailLines = (node.data.detail ?? '').split('\n')
+  const longestDetailLine = detailLines.reduce((max, line) => Math.max(max, line.length), 0)
+  if (longestDetailLine > 34) return 340
+  return 280
 }
 
 function fileEntityNodeHeight(node: Node<NodeData>): number {
   const width = fileEntityNodeWidth(node)
   const detailLines = estimatedWrappedLines(node.data.detail, width)
   const subtitleLines = node.data.subtitle ? 1 : 0
-  return 72 + subtitleLines * 18 + detailLines * 18
+  const hasTopPorts = Boolean(node.data.showMeta && (node.data.inPorts?.length ?? 0) > 0)
+  const hasBottomPorts = Boolean(node.data.showMeta && (node.data.outPorts?.length ?? 0) > 0)
+  const portRowsHeight = (hasTopPorts ? 28 : 0) + (hasBottomPorts ? 28 : 0)
+  return 72 + subtitleLines * 18 + detailLines * 18 + portRowsHeight
 }
 
 function fallbackNodeWidth(node: Node<NodeData>): number {
@@ -521,7 +735,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `${canDrillComponent(component) ? 'rf-node-clickable ' : ''}rf-node-kind-component${component.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
-    style: { width: 320 },
+    style: { width: 280 },
     data: {
       kind: 'nav' as const,
       navType: 'component' as const,
@@ -540,7 +754,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-interface${iface.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
-    style: { width: 300 },
+    style: { width: 280 },
     data: {
       kind: 'nav' as const,
       navType: 'interface' as const,
@@ -559,7 +773,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-type${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
-    style: { width: 300 },
+    style: { width: 280 },
     data: {
       kind: 'nav' as const,
       navType: 'type' as const,
@@ -576,7 +790,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-const${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
-    style: { width: 380 },
+    style: { width: 280 },
     data: {
       kind: 'nav' as const,
       navType: 'const' as const,
@@ -823,6 +1037,61 @@ async function applyLayout(
       position: {
         x: placed?.x ?? 0,
         y: placed?.y ?? 0,
+      },
+    }
+  })
+}
+
+export function catalogColumnCount(route: Route, nodes: Node<NodeData>[]): number {
+  if (nodes.length <= 1) return nodes.length
+  if (route.kind === 'file') return Math.min(2, nodes.length)
+  if (route.kind === 'entity') return Math.min(2, nodes.length)
+
+  const viewportWidth = typeof window === 'undefined' ? 1200 : Math.max(720, window.innerWidth - 96)
+  const widest = Math.max(...nodes.map((node) => fallbackNodeWidth(node)))
+  const possible = Math.max(1, Math.floor((viewportWidth + 36) / (widest + 36)))
+  return Math.min(Math.max(1, possible), 3, nodes.length)
+}
+
+export function layoutCatalogGrid(nodes: Node<NodeData>[], columns: number): Node<NodeData>[] {
+  if (nodes.length === 0) return nodes
+  const clampedColumns = Math.max(1, Math.min(columns, nodes.length))
+  const gapX = 36
+  const gapY = 36
+  const margin = 12
+  const sizes = nodes.map((node) => nodeSize(node))
+  const columnWidths = new Array<number>(clampedColumns).fill(0)
+  const rowHeights: number[] = []
+
+  for (const [index, size] of sizes.entries()) {
+    const column = index % clampedColumns
+    const row = Math.floor(index / clampedColumns)
+    columnWidths[column] = Math.max(columnWidths[column], size.width)
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, size.height)
+  }
+
+  const xOffsets: number[] = []
+  let currentX = margin
+  for (const width of columnWidths) {
+    xOffsets.push(currentX)
+    currentX += width + gapX
+  }
+
+  const yOffsets: number[] = []
+  let currentY = margin
+  for (const height of rowHeights) {
+    yOffsets.push(currentY)
+    currentY += height + gapY
+  }
+
+  return nodes.map((node, index) => {
+    const column = index % clampedColumns
+    const row = Math.floor(index / clampedColumns)
+    return {
+      ...node,
+      position: {
+        x: xOffsets[column],
+        y: yOffsets[row],
       },
     }
   })
@@ -1114,8 +1383,8 @@ export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]):
   return normalizeLayoutOrigin(nodes.map((node) => next.get(node.id) ?? node))
 }
 
-export function shouldUseMeasuredLayoutSizes(route: Route): boolean {
-  return route.kind === 'entity'
+export function shouldUseMeasuredLayoutSizes(route: Route, edgeCount: number): boolean {
+  return route.kind === 'entity' && edgeCount > 0
 }
 
 type PersistedLayout = {
@@ -1245,11 +1514,6 @@ export function GraphCanvas({
     let canceled = false
 
     async function run() {
-      const useMeasuredLayout = shouldUseMeasuredLayoutSizes(route)
-      if (useMeasuredLayout && !flow) {
-        return
-      }
-
       let nextNodes: Node<NodeData>[] = []
       let nextEdges: Edge[] = []
       let direction: 'DOWN' | 'RIGHT' = 'DOWN'
@@ -1294,16 +1558,26 @@ export function GraphCanvas({
         }
       }
 
-      const measured = useMeasuredLayout
-        ? readMeasuredNodeSizes(nextNodes.map((node) => node.id), flow?.getZoom() ?? 1)
-        : new Map<string, { width: number; height: number }>()
-      let laidOut = await applyLayout(
-        nextNodes,
-        nextEdges,
-        direction,
-        measured.size > 0 ? measured : undefined,
-      )
-      if (route.kind === 'entity') {
+      const useMeasuredLayout = shouldUseMeasuredLayoutSizes(route, nextEdges.length)
+      if (useMeasuredLayout && !flow) {
+        return
+      }
+
+      let laidOut: Node<NodeData>[]
+      if (nextEdges.length === 0) {
+        laidOut = layoutCatalogGrid(nextNodes, catalogColumnCount(route, nextNodes))
+      } else {
+        const measured = useMeasuredLayout
+          ? readMeasuredNodeSizes(nextNodes.map((node) => node.id), flow?.getZoom() ?? 1)
+          : new Map<string, { width: number; height: number }>()
+        laidOut = await applyLayout(
+          nextNodes,
+          nextEdges,
+          direction,
+          measured.size > 0 ? measured : undefined,
+        )
+      }
+      if (route.kind === 'entity' && nextEdges.length > 0) {
         laidOut = layoutComponentPipeline(laidOut, nextEdges) ?? normalizeLayoutOrigin(reduceBranchCrossings(straightenMainVerticalChain(laidOut), nextEdges))
       }
       if (!canceled) {
