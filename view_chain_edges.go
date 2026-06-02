@@ -16,9 +16,35 @@ func projectFileView(build ast.Build, fileID string) (view.File, bool) {
 	if !found {
 		return view.File{}, false
 	}
+	restoreDeclaredConstTypes(&fileView)
 	sortProjectedFileEntities(&fileView)
 	addChainTriggerConnections(&fileView, build)
 	return fileView, true
+}
+
+func restoreDeclaredConstTypes(fileView *view.File) {
+	for idx := range fileView.Consts {
+		declaredType := declaredConstTypeFromAnchor(fileView.Consts[idx].Name, fileView.Consts[idx].Anchor.Text)
+		if declaredType == "" {
+			continue
+		}
+		fileView.Consts[idx].Type = declaredType
+	}
+}
+
+func declaredConstTypeFromAnchor(name string, anchorText string) string {
+	compact := strings.TrimSpace(anchorText)
+	if compact == "" || !strings.HasPrefix(compact, name) {
+		return ""
+	}
+
+	rest := strings.TrimPrefix(compact, name)
+	eqIndex := strings.Index(rest, "=")
+	if eqIndex < 0 {
+		return ""
+	}
+
+	return strings.TrimSpace(rest[:eqIndex])
 }
 
 func sortProjectedFileEntities(fileView *view.File) {

@@ -119,6 +119,41 @@ def AlphaComponent(start any) (stop any) {
 	}
 }
 
+func TestViewAPI_GetFileView_PreservesDeclaredConstType(t *testing.T) {
+	t.Parallel()
+
+	mainFile := `
+type NumsStruct struct {
+	value int
+}
+
+const numsStruct NumsStruct = {
+	value: 1
+}
+`
+
+	server, _, _ := buildIndexedServerWithSingleMainFile(t, mainFile)
+	programAny, err := server.GetProgramView(nil, GetProgramViewRequest{})
+	if err != nil {
+		t.Fatalf("GetProgramView() error = %v", err)
+	}
+	program := programAny.(view.Program)
+	fileID := firstFileID(t, program)
+
+	fileAny, err := server.GetFileView(nil, GetFileViewRequest{FileID: fileID})
+	if err != nil {
+		t.Fatalf("GetFileView() error = %v", err)
+	}
+	fileView := fileAny.(view.File)
+
+	if len(fileView.Consts) != 1 {
+		t.Fatalf("const count = %d, want 1", len(fileView.Consts))
+	}
+	if got := fileView.Consts[0].Type; got != "NumsStruct" {
+		t.Fatalf("const type = %q, want %q", got, "NumsStruct")
+	}
+}
+
 func TestViewAPI_GetProgram_FilterGroups(t *testing.T) {
 	t.Parallel()
 

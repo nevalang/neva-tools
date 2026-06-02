@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from '@xyflow/react'
-import { fileEntityNodes, layoutComponentPipeline, type NodeData } from './GraphCanvas'
+import { fileEntityNodes, layoutComponentPipeline, shouldUseMeasuredLayoutSizes, type NodeData } from './GraphCanvas'
 import type { FileView } from '../lib/types'
 
 describe('GraphCanvas helpers', () => {
@@ -21,7 +21,8 @@ describe('GraphCanvas helpers', () => {
       consts: [{ id: 'k-a', name: 'Answer', type: 'int', value: '42' }, { id: 'k-z', name: 'Zebra', type: 'string', value: '"z"' }],
     }
 
-    expect(fileEntityNodes(file).map((node) => node.data.label)).toEqual([
+    const nodes = fileEntityNodes(file)
+    expect(nodes.map((node) => node.data.label)).toEqual([
       'Alpha',
       'Zed',
       'ZIface',
@@ -32,11 +33,21 @@ describe('GraphCanvas helpers', () => {
       'Zebra',
     ])
 
-    const constNode = fileEntityNodes(file).find((node) => node.data.label === 'Answer')
+    const constNode = nodes.find((node) => node.data.label === 'Answer')
     expect(constNode?.data.subtitle).toBe('const · int')
     expect(constNode?.data.detail).toBe('42')
-    const typeNode = fileEntityNodes(file).find((node) => node.data.label === 'AType')
+    expect(constNode?.style?.width).toBe(380)
+    const typeNode = nodes.find((node) => node.data.label === 'AType')
     expect(typeNode?.data.subtitle).toBe('type · string')
+    expect(typeNode?.style?.width).toBe(300)
+  })
+
+  it('uses measured DOM sizes only for entity graphs', () => {
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'modules' })).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'module', modulePath: '@' })).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'package', modulePath: '@', packageName: 'const_refs' })).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'file', fileId: 'module/@/package/const_refs/file/main' })).toBe(false)
+    expect(shouldUseMeasuredLayoutSizes({ kind: 'entity', fileId: 'module/@/package/const_refs/file/main', entityId: 'module/@/package/const_refs/file/main/component/Main@0' })).toBe(true)
   })
 
   it('lays out a two-call component pipeline by port order', () => {

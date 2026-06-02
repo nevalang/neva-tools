@@ -114,8 +114,6 @@ function snapGridLabel(level: number): string {
 }
 
 function EntityNode({ data }: NodeProps<Node<NodeData>>) {
-  const isConstEntity = data.kind === 'nav' && data.navType === 'const'
-
   if (data.kind === 'const') {
     return (
       <div className="rf-const-node">
@@ -175,23 +173,12 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
           </div>
         )}
         <div className="rf-node-body">
-          {isConstEntity ? (
-            <>
-              <div className="rf-node-header">
-                <div className="rf-node-title">{data.label}</div>
-                {data.subtitle ? <div className="rf-node-inline-meta">{data.subtitle}</div> : null}
-              </div>
-              {data.detail ? <div className="rf-node-detail">{data.detail}</div> : null}
-            </>
-          ) : (
-            <>
-              <div className="rf-node-title">{data.label}</div>
-              {data.showMeta && data.subtitle && <div className="rf-node-subtitle">{data.subtitle}</div>}
-              {data.showMeta && !data.subtitle && data.navType && entityKindLabel(data.navType) && (
-                <div className="rf-node-subtitle">{entityKindLabel(data.navType)}</div>
-              )}
-            </>
+          <div className="rf-node-title">{data.label}</div>
+          {data.showMeta && data.subtitle && <div className="rf-node-subtitle">{data.subtitle}</div>}
+          {data.showMeta && !data.subtitle && data.navType && entityKindLabel(data.navType) && (
+            <div className="rf-node-subtitle">{entityKindLabel(data.navType)}</div>
           )}
+          {data.detail ? <div className="rf-node-detail">{data.detail}</div> : null}
           {diArgs.length > 0 ? (
             <div className="rf-di-list" aria-label="Dependency injections">
               {diArgs.map((diArg) => {
@@ -466,10 +453,51 @@ function estimatedPortPillWidth(port: Port): number {
   return Math.max(92, nameWidth + typeWidth + gap + 24)
 }
 
+function numericNodeWidth(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
+}
+
+function estimatedWrappedLines(text: string | undefined, width: number): number {
+  if (!text) return 0
+  const charsPerLine = Math.max(18, Math.floor((width - 28) / 7))
+  return Math.max(1, Math.ceil(text.length / charsPerLine))
+}
+
+function fileEntityNodeWidth(node: Node<NodeData>): number {
+  const navType = node.data.navType
+  if (navType === 'const') {
+    return 380
+  }
+  if (navType === 'component') {
+    return 320
+  }
+  return 300
+}
+
+function fileEntityNodeHeight(node: Node<NodeData>): number {
+  const width = fileEntityNodeWidth(node)
+  const detailLines = estimatedWrappedLines(node.data.detail, width)
+  const subtitleLines = node.data.subtitle ? 1 : 0
+  return 72 + subtitleLines * 18 + detailLines * 18
+}
+
 function fallbackNodeWidth(node: Node<NodeData>): number {
+  const styledWidth = numericNodeWidth(node.style?.width)
+  if (styledWidth !== null) {
+    return Math.max(240, styledWidth)
+  }
   if (node.data.kind === 'port') return 88
   if (node.data.kind === 'const') return 92
-  if (node.data.kind === 'nav' && node.data.navType === 'const') return 280
+  if (node.data.kind === 'nav') return fileEntityNodeWidth(node)
 
   const inWidth = (node.data.inPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
   const outWidth = (node.data.outPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
@@ -479,7 +507,7 @@ function fallbackNodeWidth(node: Node<NodeData>): number {
 function fallbackNodeHeight(node: Node<NodeData>): number {
   if (node.data.kind === 'port') return 70
   if (node.data.kind === 'const') return 72
-  if (node.data.kind === 'nav' && node.data.navType === 'const') return 112
+  if (node.data.kind === 'nav') return fileEntityNodeHeight(node)
   return 120 + (node.data.diArgs?.length ?? 0) * 30
 }
 
@@ -493,6 +521,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `${canDrillComponent(component) ? 'rf-node-clickable ' : ''}rf-node-kind-component${component.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
+    style: { width: 320 },
     data: {
       kind: 'nav' as const,
       navType: 'component' as const,
@@ -511,6 +540,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-interface${iface.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
+    style: { width: 300 },
     data: {
       kind: 'nav' as const,
       navType: 'interface' as const,
@@ -529,6 +559,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-type${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
+    style: { width: 300 },
     data: {
       kind: 'nav' as const,
       navType: 'type' as const,
@@ -545,6 +576,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-const${item.id === selectedEntityID ? ' selected' : ''}`,
     position: { x: 0, y: 0 },
+    style: { width: 380 },
     data: {
       kind: 'nav' as const,
       navType: 'const' as const,
@@ -1082,6 +1114,10 @@ export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]):
   return normalizeLayoutOrigin(nodes.map((node) => next.get(node.id) ?? node))
 }
 
+export function shouldUseMeasuredLayoutSizes(route: Route): boolean {
+  return route.kind === 'entity'
+}
+
 type PersistedLayout = {
   signature: string
   positions: Record<string, { x: number; y: number }>
@@ -1209,6 +1245,11 @@ export function GraphCanvas({
     let canceled = false
 
     async function run() {
+      const useMeasuredLayout = shouldUseMeasuredLayoutSizes(route)
+      if (useMeasuredLayout && !flow) {
+        return
+      }
+
       let nextNodes: Node<NodeData>[] = []
       let nextEdges: Edge[] = []
       let direction: 'DOWN' | 'RIGHT' = 'DOWN'
@@ -1253,7 +1294,9 @@ export function GraphCanvas({
         }
       }
 
-      const measured = readMeasuredNodeSizes(nextNodes.map((node) => node.id), flow?.getZoom() ?? 1)
+      const measured = useMeasuredLayout
+        ? readMeasuredNodeSizes(nextNodes.map((node) => node.id), flow?.getZoom() ?? 1)
+        : new Map<string, { width: number; height: number }>()
       let laidOut = await applyLayout(
         nextNodes,
         nextEdges,
