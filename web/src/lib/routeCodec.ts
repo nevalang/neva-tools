@@ -87,7 +87,7 @@ export function parseHashRoute(hashRaw: string): AppRoute {
   const entityName = segments[4] ?? ''
   if (!entityKind || !entityName) return { kind: 'file', fileId }
   const overload = segments[5] ?? ''
-  const canonicalName = overload ? `${entityName}@${overload}` : entityName
+  const canonicalName = overload ? `${entityName}@${overload}` : entityKind === 'component' ? `${entityName}@0` : entityName
   return { kind: 'entity', fileId, entityId: composeEntityID(fileId, entityKind, canonicalName) }
 }
 
@@ -113,5 +113,8 @@ export function routeToHash(route: AppRoute): string {
   const parsed = parseEntityID(route.entityId)
   const split = splitEntityNameAndOverload(parsed.entityName)
   const base = `#/${encodeSegment(encodeModulePath(parts.modulePath))}/${encodeSegment(parts.packageName)}/${encodeSegment(parts.fileName)}/${encodeSegment(parsed.entityKind)}/${encodeSegment(split.baseName)}`
+  if (parsed.entityKind === 'component' && split.overload === '0') {
+    return base
+  }
   return split.overload ? `${base}/${encodeSegment(split.overload)}` : base
 }

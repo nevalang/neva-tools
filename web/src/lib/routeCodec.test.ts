@@ -33,8 +33,9 @@ describe('routeCodec', () => {
       entityId: 'module/@/package/hello_world/file/main/component/Main@0',
     }
     const hash = routeToHash(route)
-    expect(hash).toBe('#/current/hello_world/main/component/Main/0')
+    expect(hash).toBe('#/current/hello_world/main/component/Main')
     expect(parseHashRoute(hash)).toEqual(route)
+    expect(parseHashRoute('#/current/hello_world/main/component/Main/0')).toEqual(route)
   })
 
   it('keeps versioned module paths readable without percent-encoding @', () => {

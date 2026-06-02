@@ -36,12 +36,74 @@ describe('appSemantics', () => {
     })
   })
 
+  it('uses standalone entry file without hiding other current packages', () => {
+    const program = {
+      entryFileIds: ['module/@/package/hello_world/file/main'],
+      modules: [
+        {
+          path: '@',
+          packages: [
+            {
+              name: 'hello_world',
+              fileSummaries: [{
+                id: 'module/@/package/hello_world/file/main',
+                name: 'main',
+                components: [{ id: 'module/@/package/hello_world/file/main/component/Main@0', name: 'Main' }],
+                interfaces: [],
+                types: [],
+                consts: [],
+              }],
+            },
+            {
+              name: 'other',
+              fileSummaries: [{ id: 'module/@/package/other/file/main', name: 'main' }],
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(inferInitialRoute(program)).toEqual({
+      kind: 'entity',
+      fileId: 'module/@/package/hello_world/file/main',
+      entityId: 'module/@/package/hello_world/file/main/component/Main@0',
+    })
+  })
+
   it('validates routes against program', () => {
     expect(routeExistsInProgram({ kind: 'modules' }, modules)).toBe(true)
     expect(routeExistsInProgram({ kind: 'module', modulePath: '@' }, modules)).toBe(true)
     expect(routeExistsInProgram({ kind: 'package', modulePath: '@', packageName: 'main' }, modules)).toBe(true)
     expect(routeExistsInProgram({ kind: 'file', fileId: 'module/@/package/main/file/main' }, modules)).toBe(true)
     expect(routeExistsInProgram({ kind: 'module', modulePath: 'missing' }, modules)).toBe(false)
+  })
+
+  it('validates entity routes against file summaries when entity refs are present', () => {
+    const richModules: ModuleSummary[] = [{
+      path: 'std@0.38.0',
+      packages: [{
+        name: 'http',
+        fileSummaries: [{
+          id: 'module/std@0.38.0/package/http/file/http',
+          name: 'http',
+          components: [{ id: 'module/std@0.38.0/package/http/file/http/component/Get@0', name: 'Get' }],
+          interfaces: [],
+          types: [{ id: 'module/std@0.38.0/package/http/file/http/type/Response', name: 'Response' }],
+          consts: [],
+        }],
+      }],
+    }]
+
+    expect(routeExistsInProgram({
+      kind: 'entity',
+      fileId: 'module/std@0.38.0/package/http/file/http',
+      entityId: 'module/std@0.38.0/package/http/file/http/type/Response',
+    }, richModules)).toBe(true)
+    expect(routeExistsInProgram({
+      kind: 'entity',
+      fileId: 'module/std@0.38.0/package/http/file/http',
+      entityId: 'module/std@0.38.0/package/http/file/http/type/Missing',
+    }, richModules)).toBe(false)
   })
 
   it('detects native-only components', () => {

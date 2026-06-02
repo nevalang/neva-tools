@@ -64,7 +64,13 @@ func registerViewAPI(mux *http.ServeMux, build *ast.Build, manifestCurrent manif
 			IncludeStd:     queryBoolPtr(req, "includeStd"),
 		}
 		program := scope.filterCurrentModule(view.ProjectProgram(*build))
-		writeJSON(w, filterProgramModules(program, params))
+		writeJSON(w, struct {
+			view.Program
+			EntryFileIDs []string `json:"entryFileIds,omitempty"`
+		}{
+			Program:      filterProgramModules(program, params),
+			EntryFileIDs: scope.entryFileIDs(program),
+		})
 	})
 
 	mux.HandleFunc("/api/view/file", func(w http.ResponseWriter, req *http.Request) {
@@ -274,35 +280,29 @@ func detectWorkspaceProgramScope(workspacePath string) workspaceProgramScope {
 }
 
 func (s workspaceProgramScope) filterCurrentModule(program view.Program) view.Program {
+	return program
+}
+
+func (s workspaceProgramScope) entryFileIDs(program view.Program) []string {
 	if !s.enabled {
-		return program
+		return []string{}
 	}
 
-	filtered := view.Program{Modules: make([]view.Module, 0, len(program.Modules))}
+	result := []string{}
 	for _, module := range program.Modules {
 		if classifyModule(module.Path) != "current" {
-			filtered.Modules = append(filtered.Modules, module)
 			continue
 		}
-
-		moduleCopy := module
-		moduleCopy.Packages = slices.DeleteFunc(append([]view.Package(nil), module.Packages...), func(pkg view.Package) bool {
+		for _, pkg := range module.Packages {
 			for _, fileSummary := range pkg.FileSummaries {
 				if _, ok := s.allowedFilePaths[filepath.ToSlash(filepath.Clean(fileSummary.Path))]; ok {
-					return false
+					result = append(result, fileSummary.ID)
 				}
 			}
-			return true
-		})
-
-		if len(moduleCopy.Packages) == 0 {
-			filtered.Modules = append(filtered.Modules, module)
-			continue
 		}
-		filtered.Modules = append(filtered.Modules, moduleCopy)
 	}
-
-	return filtered
+	slices.Sort(result)
+	return result
 }
 
 func readManifestView(workspacePath string) manifestView {

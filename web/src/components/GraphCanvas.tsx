@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react'
 import {
   applyNodeChanges,
   Background,
+  ControlButton,
   Controls,
   Handle,
   MiniMap,
@@ -17,7 +18,7 @@ import {
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { endpointPortName, inferImplicitPortName, parseSignaturePorts, shouldAddImplicitErrEdge, shouldAddImplicitInputEdge } from '../lib/graphSemantics'
 import { isNativeComponent, type AppRoute } from '../lib/appSemantics'
-import type { Component, DINode, Endpoint, FileView, ModuleSummary, Port, ResolvedRef } from '../lib/types'
+import type { Component, ConstDecl, DINode, Endpoint, FileView, ModuleSummary, Port, ResolvedRef, TypeDecl } from '../lib/types'
 import { routeToHash } from '../lib/routeCodec'
 
 type Route = AppRoute
@@ -356,6 +357,27 @@ function canDrillComponent(component: Component): boolean {
   return component.nodes.length > 0 || component.connections.length > 0
 }
 
+function typePreview(item: TypeDecl): string {
+  const raw = item.type?.trim()
+  if (!raw) return 'type'
+  const normalized = raw.replace(/\s+/g, ' ')
+  if (/=\s*\{/u.test(normalized)) {
+    return 'struct'
+  }
+  const match = normalized.match(/^(struct|list|dict|stream|error|any|bool|string|int|float)\b(?:<(.*?)>)?/u)
+  if (!match) return 'type'
+  const kind = match[1] ?? 'type'
+  const args = match[2] ? `<${match[2]}>` : ''
+  return `${kind}${args}`
+}
+
+function constPreview(item: ConstDecl): string {
+  const type = item.type?.trim()
+  const value = item.value?.trim()
+  if (type && value) return `${type} = ${value}`
+  return type || value || item.anchor?.text?.trim() || 'const'
+}
+
 function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: Map<string, string>): Port[] {
   if (!portMap) {
     return []
@@ -427,7 +449,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
       kind: 'nav' as const,
       navType: 'type' as const,
       label: item.name,
-      subtitle: 'type',
+      subtitle: typePreview(item),
       showMeta: true,
       fileId: file.id,
       entityId: item.id,
@@ -443,7 +465,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
       kind: 'nav' as const,
       navType: 'const' as const,
       label: item.name,
-      subtitle: item.anchor?.text?.trim() || 'const',
+      subtitle: constPreview(item),
       showMeta: true,
       fileId: file.id,
       entityId: item.id,
@@ -958,6 +980,9 @@ export function GraphCanvas({
       return { kind: 'file', fileId: node.data.fileId }
     }
     if (current.kind === 'file' && node.data.fileId && node.data.entityId) {
+      if (file && node.data.navType === 'component' && isNativeComponent(file, node.data.entityId)) {
+        return null
+      }
       return { kind: 'entity', fileId: node.data.fileId, entityId: node.data.entityId }
     }
     return null
@@ -998,14 +1023,6 @@ export function GraphCanvas({
             <button onClick={onGoForward} disabled={!canGoForward}>→</button>
           </div>
           <div className="canvas-nav-right">
-            <button
-              className="canvas-reset-layout"
-              onClick={resetCurrentLayout}
-              title="Reset node positions"
-              aria-label="Reset node positions"
-            >
-              Reset layout
-            </button>
             <button
               className="canvas-theme-toggle"
               onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
@@ -1060,6 +1077,9 @@ export function GraphCanvas({
             onNavigate(nextRoute, true)
             return
           }
+          if (file && node.data.navType === 'component' && node.data.entityId && isNativeComponent(file, node.data.entityId)) {
+            return
+          }
           if (route.kind === 'entity' && node.data.fileId && node.data.entityId) {
             void onResolveOpen({ fileId: node.data.fileId, entityId: node.data.entityId })
           }
@@ -1082,7 +1102,17 @@ export function GraphCanvas({
         <Controls
           showInteractive
           onInteractiveChange={(value) => setInteractive(value)}
-        />
+        >
+          <ControlButton
+            onClick={resetCurrentLayout}
+            title="Reset node positions"
+            aria-label="Reset node positions"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.3 7.3A8 8 0 1 1 4 13h2a6 6 0 1 0 1.8-4.3L10 11H3V4l3.3 3.3Z" />
+            </svg>
+          </ControlButton>
+        </Controls>
         <Background />
       </ReactFlow>
     </section>

@@ -3,7 +3,7 @@ import { GraphCanvas } from './components/GraphCanvas'
 import { inferInitialRoute, routeExistsInProgram, type AppRoute } from './lib/appSemantics'
 import { parseHashRoute, routeToHash } from './lib/routeCodec'
 import { viewClient } from './lib/viewClient'
-import type { FileView, ModuleSummary } from './lib/types'
+import type { FileView, ModuleSummary, Program } from './lib/types'
 
 type Route = AppRoute
 
@@ -64,6 +64,7 @@ function fileDisplayName(fileID: string): string {
 
 export function App() {
   const [modules, setModules] = useState<ModuleSummary[]>([])
+  const [programMeta, setProgramMeta] = useState<Pick<Program, 'entryFileIds'>>({})
   const [route, setRoute] = useState<Route>(() => parseHashRoute(window.location.hash))
   const [fileCache, setFileCache] = useState<Record<string, FileView>>({})
   const [backStack, setBackStack] = useState<Route[]>([])
@@ -84,11 +85,11 @@ export function App() {
         setFileCache((prev) => ({ ...prev, [fileID]: file }))
       })
       .catch(() => {
-        const fallback = inferInitialRoute(modules)
+        const fallback = inferInitialRoute({ modules, entryFileIds: programMeta.entryFileIds })
         setRoute(fallback)
         window.history.replaceState({}, '', routeToHash(fallback))
       })
-  }, [route, fileCache, modules])
+  }, [route, fileCache, modules, programMeta.entryFileIds])
 
   useEffect(() => {
     if (modules.length === 0) {
@@ -97,10 +98,10 @@ export function App() {
     if (routeExistsInProgram(route, modules)) {
       return
     }
-    const fallback = inferInitialRoute(modules)
+    const fallback = inferInitialRoute({ modules, entryFileIds: programMeta.entryFileIds })
     setRoute(fallback)
     window.history.replaceState({}, '', routeToHash(fallback))
-  }, [route, modules])
+  }, [route, modules, programMeta.entryFileIds])
 
   useEffect(() => {
     function onPopState() {
@@ -118,8 +119,9 @@ export function App() {
       includeStd: true,
     })
     setModules(program.modules)
+    setProgramMeta({ entryFileIds: program.entryFileIds })
 
-    const initialRoute = inferInitialRoute(program.modules)
+    const initialRoute = inferInitialRoute(program)
     const hasExplicitHash = window.location.hash.replace(/^#/, '').length > 0
     setRoute((current) => {
       if (hasExplicitHash && routeExistsInProgram(current, program.modules)) {

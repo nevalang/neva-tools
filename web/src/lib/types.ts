@@ -1,5 +1,6 @@
 export type Program = {
   modules: ModuleSummary[]
+  entryFileIds?: string[]
 }
 
 export type ModuleSummary = {
@@ -104,12 +105,15 @@ export type Interface = {
 export type TypeDecl = {
   id: string
   name: string
+  type?: string
   anchor?: SourceAnchor
 }
 
 export type ConstDecl = {
   id: string
   name: string
+  type?: string
+  value?: string
   anchor?: SourceAnchor
 }
 

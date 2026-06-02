@@ -38,6 +38,7 @@ async function postJSON<TReq extends object, TRes>(url: string, payload: TReq): 
 function normalizeProgram(program: Program): Program {
   return {
     ...program,
+    entryFileIds: program.entryFileIds ?? [],
     modules: (program.modules ?? []).map(normalizeModule),
   }
 }

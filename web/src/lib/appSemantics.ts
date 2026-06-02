@@ -1,4 +1,4 @@
-import type { FileView, ModuleSummary } from './types'
+import type { FileSummary, FileView, ModuleSummary, Program } from './types'
 
 export type AppRoute =
   | { kind: 'modules' }
@@ -7,7 +7,9 @@ export type AppRoute =
   | { kind: 'file'; fileId: string }
   | { kind: 'entity'; fileId: string; entityId: string }
 
-export function inferInitialRoute(modules: ModuleSummary[]): AppRoute {
+export function inferInitialRoute(programOrModules: Program | ModuleSummary[]): AppRoute {
+  const modules = Array.isArray(programOrModules) ? programOrModules : programOrModules.modules
+  const entryFileIds = Array.isArray(programOrModules) ? [] : (programOrModules.entryFileIds ?? [])
   if (modules.length === 0) {
     return { kind: 'modules' }
   }
@@ -17,28 +19,61 @@ export function inferInitialRoute(modules: ModuleSummary[]): AppRoute {
     return { kind: 'modules' }
   }
 
+  const entryFiles = entryFileIds
+    .map((fileID) => findFileSummary(modules, fileID))
+    .filter((file): file is FileSummary => Boolean(file))
+
+  if (entryFiles.length === 1) {
+    const route = singleComponentRoute(entryFiles[0])
+    if (route) return route
+    return { kind: 'file', fileId: entryFiles[0].id }
+  }
+
   if (activeModule.packages.length === 1) {
     const onlyPackage = activeModule.packages[0]
     if (onlyPackage && onlyPackage.fileSummaries.length === 1) {
-      const onlyFile = onlyPackage.fileSummaries[0]
-      if (onlyFile) {
-        const componentEntities = onlyFile.components ?? []
-        const interfaceEntities = onlyFile.interfaces ?? []
-        const typeEntities = onlyFile.types ?? []
-        const constEntities = onlyFile.consts ?? []
-        const entityTotal =
-          componentEntities.length +
-          interfaceEntities.length +
-          typeEntities.length +
-          constEntities.length
-        if (entityTotal === 1 && componentEntities.length === 1) {
-          return { kind: 'entity', fileId: onlyFile.id, entityId: componentEntities[0].id }
-        }
-      }
+      const route = singleComponentRoute(onlyPackage.fileSummaries[0])
+      if (route) return route
     }
   }
 
   return { kind: 'module', modulePath: activeModule.path }
+}
+
+function singleComponentRoute(file: FileSummary | undefined): AppRoute | null {
+  if (!file) return null
+
+  const componentEntities = file.components ?? []
+  const interfaceEntities = file.interfaces ?? []
+  const typeEntities = file.types ?? []
+  const constEntities = file.consts ?? []
+  const entityTotal =
+    componentEntities.length +
+    interfaceEntities.length +
+    typeEntities.length +
+    constEntities.length
+  if (entityTotal === 1 && componentEntities.length === 1) {
+    return { kind: 'entity', fileId: file.id, entityId: componentEntities[0].id }
+  }
+  return null
+}
+
+function findFileSummary(modules: ModuleSummary[], fileID: string): FileSummary | null {
+  for (const moduleItem of modules) {
+    for (const pkg of moduleItem.packages) {
+      const file = pkg.fileSummaries.find((item) => item.id === fileID)
+      if (file) return file
+    }
+  }
+  return null
+}
+
+function fileSummaryHasEntity(file: FileSummary, entityID: string): boolean {
+  const groups = [file.components, file.interfaces, file.types, file.consts]
+  if (groups.every((group) => group === undefined)) {
+    return true
+  }
+  return groups.some((group) => (group ?? []).some((entity) => entity.id === entityID))
 }
 
 export function routeExistsInProgram(route: AppRoute, modules: ModuleSummary[]): boolean {
@@ -60,11 +95,10 @@ export function routeExistsInProgram(route: AppRoute, modules: ModuleSummary[]):
   }
 
   if (route.kind === 'file' || route.kind === 'entity') {
-    return modules.some((moduleItem) =>
-      moduleItem.packages.some((pkg) =>
-        pkg.fileSummaries.some((fileSummary) => fileSummary.id === route.fileId),
-      ),
-    )
+    const file = findFileSummary(modules, route.fileId)
+    if (!file) return false
+    if (route.kind === 'file') return true
+    return fileSummaryHasEntity(file, route.entityId)
   }
 
   return false

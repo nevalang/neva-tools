@@ -133,7 +133,7 @@ func TestEmbeddedWebDistFS_HasIndex(t *testing.T) {
 	}
 }
 
-func TestDetectWorkspaceProgramScope_FilterCurrentModuleBySubdir(t *testing.T) {
+func TestDetectWorkspaceProgramScope_PreservesProgramAndReportsEntryFiles(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
@@ -149,8 +149,8 @@ func TestDetectWorkspaceProgramScope_FilterCurrentModuleBySubdir(t *testing.T) {
 		{
 			Path: "@",
 			Packages: []view.Package{
-				{Name: "hello_world", FileSummaries: []view.FileSummary{{Path: "hello_world/main.neva"}}},
-				{Name: "other", FileSummaries: []view.FileSummary{{Path: "other/main.neva"}}},
+				{Name: "hello_world", FileSummaries: []view.FileSummary{{ID: "module/@/package/hello_world/file/main", Path: "hello_world/main.neva"}}},
+				{Name: "other", FileSummaries: []view.FileSummary{{ID: "module/@/package/other/file/main", Path: "other/main.neva"}}},
 			},
 		},
 		{
@@ -161,15 +161,19 @@ func TestDetectWorkspaceProgramScope_FilterCurrentModuleBySubdir(t *testing.T) {
 		},
 	}}
 
-	filtered := scope.filterCurrentModule(program)
-	if len(filtered.Modules) != 2 {
-		t.Fatalf("module count=%d, want 2", len(filtered.Modules))
+	gotProgram := scope.filterCurrentModule(program)
+	if len(gotProgram.Modules) != 2 {
+		t.Fatalf("module count=%d, want 2", len(gotProgram.Modules))
 	}
-	if len(filtered.Modules[0].Packages) != 1 {
-		t.Fatalf("current module package count=%d, want 1", len(filtered.Modules[0].Packages))
+	if len(gotProgram.Modules[0].Packages) != 2 {
+		t.Fatalf("current module package count=%d, want 2", len(gotProgram.Modules[0].Packages))
 	}
-	if filtered.Modules[0].Packages[0].Name != "hello_world" {
-		t.Fatalf("current module package=%q, want hello_world", filtered.Modules[0].Packages[0].Name)
+	gotEntries := scope.entryFileIDs(program)
+	if len(gotEntries) != 1 {
+		t.Fatalf("entry file count=%d, want 1", len(gotEntries))
+	}
+	if gotEntries[0] != "module/@/package/hello_world/file/main" {
+		t.Fatalf("entry file=%q, want hello_world main file", gotEntries[0])
 	}
 }
 
