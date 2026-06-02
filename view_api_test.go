@@ -48,6 +48,9 @@ def Main(start any) (stop any) {
 	if fileView.Name != "main" {
 		t.Fatalf("GetFileView() file name = %q, want main", fileView.Name)
 	}
+	if len(fileView.Components) != 1 || fileView.Components[0].Name != "Main" {
+		t.Fatalf("GetFileView() components = %#v, want Main", fileView.Components)
+	}
 
 	encodedProgram1, err := json.Marshal(program)
 	if err != nil {
@@ -63,6 +66,56 @@ def Main(start any) (stop any) {
 	}
 	if string(encodedProgram1) != string(encodedProgram2) {
 		t.Fatal("GetProgramView() is not deterministic")
+	}
+}
+
+func TestViewAPI_GetFileView_SortsEntitiesByKindAndName(t *testing.T) {
+	t.Parallel()
+
+	mainFile := `
+const ZConst string = 'z'
+const AConst string = 'a'
+
+type ZType string
+type AType string
+
+interface ZIface(data any) (res any)
+interface AIface(data any) (res any)
+
+def Zed(start any) (stop any) {
+	:start -> :stop
+}
+
+def AlphaComponent(start any) (stop any) {
+	:start -> :stop
+}
+`
+
+	server, _, _ := buildIndexedServerWithSingleMainFile(t, mainFile)
+	programAny, err := server.GetProgramView(nil, GetProgramViewRequest{})
+	if err != nil {
+		t.Fatalf("GetProgramView() error = %v", err)
+	}
+	program := programAny.(view.Program)
+	fileID := firstFileID(t, program)
+
+	fileAny, err := server.GetFileView(nil, GetFileViewRequest{FileID: fileID})
+	if err != nil {
+		t.Fatalf("GetFileView() error = %v", err)
+	}
+	fileView := fileAny.(view.File)
+
+	if got := componentNames(fileView); !equalStrings(got, []string{"AlphaComponent", "Zed"}) {
+		t.Fatalf("components order = %#v, want %#v", got, []string{"AlphaComponent", "Zed"})
+	}
+	if got := interfaceNames(fileView); !equalStrings(got, []string{"AIface", "ZIface"}) {
+		t.Fatalf("interfaces order = %#v, want %#v", got, []string{"AIface", "ZIface"})
+	}
+	if got := typeNames(fileView); !equalStrings(got, []string{"AType", "ZType"}) {
+		t.Fatalf("types order = %#v, want %#v", got, []string{"AType", "ZType"})
+	}
+	if got := constNames(fileView); !equalStrings(got, []string{"AConst", "ZConst"}) {
+		t.Fatalf("consts order = %#v, want %#v", got, []string{"AConst", "ZConst"})
 	}
 }
 
@@ -490,4 +543,48 @@ func countModulesByKind(program view.Program, kind string) int {
 
 func boolRef(value bool) *bool {
 	return &value
+}
+
+func componentNames(file view.File) []string {
+	names := make([]string, 0, len(file.Components))
+	for _, item := range file.Components {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
+func interfaceNames(file view.File) []string {
+	names := make([]string, 0, len(file.Interfaces))
+	for _, item := range file.Interfaces {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
+func typeNames(file view.File) []string {
+	names := make([]string, 0, len(file.Types))
+	for _, item := range file.Types {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
+func constNames(file view.File) []string {
+	names := make([]string, 0, len(file.Consts))
+	for _, item := range file.Consts {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
+func equalStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }

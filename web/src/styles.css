@@ -143,13 +143,6 @@ button:disabled {
   font-size: 14px;
 }
 
-.canvas-nav-buttons .canvas-theme-toggle {
-  width: 32px;
-  min-width: 32px;
-  padding: 4px 0;
-  font-size: 13px;
-}
-
 .canvas-nav-buttons .canvas-settings-toggle {
   width: 32px;
   min-width: 32px;
@@ -163,7 +156,6 @@ button:disabled {
 }
 
 .canvas-nav-buttons .canvas-copy-url,
-.canvas-nav-buttons .canvas-theme-toggle,
 .canvas-nav-buttons .canvas-settings-toggle {
   text-transform: none;
 }
@@ -212,16 +204,13 @@ button:disabled {
 
 .canvas-settings-row {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
   background: color-mix(in srgb, var(--surface) 82%, var(--bg));
-}
-
-.canvas-settings-row input {
-  margin-top: 2px;
 }
 
 .canvas-settings-label {
@@ -229,6 +218,44 @@ button:disabled {
   font-size: 13px;
   font-weight: 700;
   margin-bottom: 2px;
+}
+
+.canvas-settings-actions {
+  display: inline-flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.canvas-settings-choice {
+  min-width: 72px;
+  text-align: center;
+  padding: 6px 12px;
+}
+
+.canvas-settings-choice.is-active {
+  border-color: var(--hover-border);
+  background: color-mix(in srgb, var(--hover-border) 16%, var(--surface));
+  color: var(--text);
+}
+
+.canvas-settings-slider-wrap {
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.canvas-settings-slider-wrap input[type='range'] {
+  width: 140px;
+  margin: 0;
+}
+
+.canvas-settings-slider-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .canvas-breadcrumbs {

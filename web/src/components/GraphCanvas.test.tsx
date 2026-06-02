@@ -4,35 +4,39 @@ import { fileEntityNodes, layoutComponentPipeline, type NodeData } from './Graph
 import type { FileView } from '../lib/types'
 
 describe('GraphCanvas helpers', () => {
-  it('sorts file entities by kind and name before layout', () => {
+  it('preserves entity order provided by the API', () => {
     const file: FileView = {
       id: 'module/@/package/p/file/main',
       name: 'main',
       imports: [],
       components: [
-        { id: 'c-z', name: 'Zed', inPorts: [], outPorts: [], nodes: [], connections: [] },
         { id: 'c-a', name: 'Alpha', inPorts: [], outPorts: [], nodes: [], connections: [] },
+        { id: 'c-z', name: 'Zed', inPorts: [], outPorts: [], nodes: [], connections: [] },
       ],
-      interfaces: [{ id: 'i-b', name: 'Beta', inPorts: [], outPorts: [] }],
+      interfaces: [{ id: 'i-z', name: 'ZIface', inPorts: [], outPorts: [] }, { id: 'i-a', name: 'AIface', inPorts: [], outPorts: [] }],
       types: [
-        { id: 't-z', name: 'ZType', type: 'int' },
         { id: 't-a', name: 'AType', type: 'string' },
+        { id: 't-z', name: 'ZType', type: 'int' },
       ],
-      consts: [{ id: 'k-a', name: 'Answer', type: 'int', value: '42' }],
+      consts: [{ id: 'k-a', name: 'Answer', type: 'int', value: '42' }, { id: 'k-z', name: 'Zebra', type: 'string', value: '"z"' }],
     }
 
     expect(fileEntityNodes(file).map((node) => node.data.label)).toEqual([
       'Alpha',
       'Zed',
-      'Beta',
+      'ZIface',
+      'AIface',
       'AType',
       'ZType',
       'Answer',
+      'Zebra',
     ])
 
     const constNode = fileEntityNodes(file).find((node) => node.data.label === 'Answer')
-    expect(constNode?.data.subtitle).toBe('int')
+    expect(constNode?.data.subtitle).toBe('const · int')
     expect(constNode?.data.detail).toBe('42')
+    const typeNode = fileEntityNodes(file).find((node) => node.data.label === 'AType')
+    expect(typeNode?.data.subtitle).toBe('type · string')
   })
 
   it('lays out a two-call component pipeline by port order', () => {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -15,8 +16,28 @@ func projectFileView(build ast.Build, fileID string) (view.File, bool) {
 	if !found {
 		return view.File{}, false
 	}
+	sortProjectedFileEntities(&fileView)
 	addChainTriggerConnections(&fileView, build)
 	return fileView, true
+}
+
+func sortProjectedFileEntities(fileView *view.File) {
+	sort.SliceStable(fileView.Components, func(i, j int) bool {
+		return entitySortKey(fileView.Components[i].Name, fileView.Components[i].ID) < entitySortKey(fileView.Components[j].Name, fileView.Components[j].ID)
+	})
+	sort.SliceStable(fileView.Interfaces, func(i, j int) bool {
+		return entitySortKey(fileView.Interfaces[i].Name, fileView.Interfaces[i].ID) < entitySortKey(fileView.Interfaces[j].Name, fileView.Interfaces[j].ID)
+	})
+	sort.SliceStable(fileView.Types, func(i, j int) bool {
+		return entitySortKey(fileView.Types[i].Name, fileView.Types[i].ID) < entitySortKey(fileView.Types[j].Name, fileView.Types[j].ID)
+	})
+	sort.SliceStable(fileView.Consts, func(i, j int) bool {
+		return entitySortKey(fileView.Consts[i].Name, fileView.Consts[i].ID) < entitySortKey(fileView.Consts[j].Name, fileView.Consts[j].ID)
+	})
+}
+
+func entitySortKey(name string, id string) string {
+	return strings.ToLower(strings.TrimSpace(name)) + "\x00" + id
 }
 
 func addChainTriggerConnections(fileView *view.File, build ast.Build) {

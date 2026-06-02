@@ -62,8 +62,8 @@ export type NodeData = {
 
 const elk = new ELK()
 const THEME_STORAGE_KEY = 'neva-lsp:theme'
-const SNAP_GRID_STORAGE_KEY = 'neva-lsp:snap-grid'
-const GRAPH_SNAP_GRID: [number, number] = [24, 24]
+const SNAP_GRID_STORAGE_KEY = 'neva-lsp:snap-grid-level'
+const SNAP_GRID_STEPS = [0, 12, 24] as const
 
 const LIGHT_KIND_COLORS = {
   module: '#5f8fc8',
@@ -98,6 +98,19 @@ function handleOffsets(count: number): string[] {
 
 function handleIDForPort(portName: string): string {
   return `port:${portName}`
+}
+
+function entityKindLabel(navType: NodeData['navType'], subtitle?: string): string | undefined {
+  if (navType === 'component') return subtitle
+  if (navType === 'interface') return 'interface'
+  if (navType === 'type') return subtitle ? `type · ${subtitle}` : 'type'
+  if (navType === 'const') return subtitle ? `const · ${subtitle}` : 'const'
+  return subtitle
+}
+
+function snapGridLabel(level: number): string {
+  const size = SNAP_GRID_STEPS[level] ?? 0
+  return size <= 0 ? 'Off' : `${size}px`
 }
 
 function EntityNode({ data }: NodeProps<Node<NodeData>>) {
@@ -174,6 +187,9 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
             <>
               <div className="rf-node-title">{data.label}</div>
               {data.showMeta && data.subtitle && <div className="rf-node-subtitle">{data.subtitle}</div>}
+              {data.showMeta && !data.subtitle && data.navType && entityKindLabel(data.navType) && (
+                <div className="rf-node-subtitle">{entityKindLabel(data.navType)}</div>
+              )}
             </>
           )}
           {diArgs.length > 0 ? (
@@ -418,10 +434,6 @@ function constValuePreview(item: ConstDecl): string {
   return item.value?.trim() || ''
 }
 
-function sortByName<T extends { name: string }>(items: T[]): T[] {
-  return [...items].sort((a, b) => a.name.localeCompare(b.name))
-}
-
 function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: Map<string, string>): Port[] {
   if (!portMap) {
     return []
@@ -476,7 +488,7 @@ function nodeSize(node: Node<NodeData>, measuredSizes?: Map<string, { width: num
 }
 
 export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeData>[] {
-  const components = sortByName(file.components).map((component) => ({
+  const components = file.components.map((component) => ({
     id: `entity:${component.id}`,
     type: 'entityNode' as const,
     className: `${canDrillComponent(component) ? 'rf-node-clickable ' : ''}rf-node-kind-component${component.id === selectedEntityID ? ' selected' : ''}`,
@@ -494,7 +506,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     },
   }))
 
-  const interfaces = sortByName(file.interfaces).map((iface) => ({
+  const interfaces = file.interfaces.map((iface) => ({
     id: `entity:${iface.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-interface${iface.id === selectedEntityID ? ' selected' : ''}`,
@@ -512,7 +524,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
     },
   }))
 
-  const types = sortByName(file.types).map((item) => ({
+  const types = file.types.map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-type${item.id === selectedEntityID ? ' selected' : ''}`,
@@ -521,14 +533,14 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
       kind: 'nav' as const,
       navType: 'type' as const,
       label: item.name,
-      subtitle: typePreview(item),
+      subtitle: `type · ${typePreview(item)}`,
       showMeta: true,
       fileId: file.id,
       entityId: item.id,
     },
   }))
 
-  const consts = sortByName(file.consts).map((item) => ({
+  const consts = file.consts.map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-const${item.id === selectedEntityID ? ' selected' : ''}`,
@@ -537,7 +549,7 @@ export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node
       kind: 'nav' as const,
       navType: 'const' as const,
       label: item.name,
-      subtitle: constTypePreview(item),
+      subtitle: `const · ${constTypePreview(item)}`,
       detail: constValuePreview(item),
       showMeta: true,
       fileId: file.id,
@@ -1058,7 +1070,7 @@ export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]):
       const targetY = placedCall.position.y + fallbackNodeHeight(placedCall) + sinkGapY
       const aligned = alignTargetToSource(target, placedCall, { ...edge, sourceHandle: sourceHandle(edge), targetHandle: targetHandle(edge) })
       const slot = `${Math.round(aligned.position.x)}:${targetY}`
-      const bump = occupied.has(slot) ? GRAPH_SNAP_GRID[0] * occupied.size : 0
+      const bump = occupied.has(slot) ? SNAP_GRID_STEPS[2] * occupied.size : 0
       occupied.add(slot)
       target.position = {
         x: aligned.position.x + bump,
@@ -1138,9 +1150,16 @@ export function GraphCanvas({
   const [layoutSignature, setLayoutSignature] = useState('')
   const [layoutSeed, setLayoutSeed] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [snapToGrid, setSnapToGrid] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.localStorage.getItem(SNAP_GRID_STORAGE_KEY) === 'true'
+  const [snapGridLevel, setSnapGridLevel] = useState(() => {
+    if (typeof window === 'undefined') return 0
+    const saved = window.localStorage.getItem(SNAP_GRID_STORAGE_KEY)
+    if (saved === '0' || saved === '1' || saved === '2') {
+      return Number(saved)
+    }
+    if (saved === 'true') {
+      return 2
+    }
+    return 0
   })
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -1166,11 +1185,15 @@ export function GraphCanvas({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(SNAP_GRID_STORAGE_KEY, String(snapToGrid))
+      window.localStorage.setItem(SNAP_GRID_STORAGE_KEY, String(snapGridLevel))
     } catch {
       // Ignore storage errors.
     }
-  }, [snapToGrid])
+  }, [snapGridLevel])
+
+  const snapGridSize = SNAP_GRID_STEPS[snapGridLevel] ?? 0
+  const snapToGrid = snapGridSize > 0
+  const snapGrid: [number, number] = [snapGridSize || 1, snapGridSize || 1]
 
   useEffect(() => {
     if (!flow || nodes.length === 0 || layoutVersion === 0) {
@@ -1330,14 +1353,6 @@ export function GraphCanvas({
           </div>
           <div className="canvas-nav-right">
             <button
-              className="canvas-theme-toggle"
-              onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
-              title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-              aria-label={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-            >
-              {theme === 'light' ? '🌙' : '☀️'}
-            </button>
-            <button
               className="canvas-settings-toggle"
               onClick={() => setSettingsOpen(true)}
               title="Open graph settings"
@@ -1383,14 +1398,42 @@ export function GraphCanvas({
               <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close graph settings">×</button>
             </div>
             <label className="canvas-settings-row">
-              <input
-                type="checkbox"
-                checked={snapToGrid}
-                onChange={(event) => setSnapToGrid(event.target.checked)}
-              />
+              <span>
+                <span className="canvas-settings-label">Theme</span>
+                <span className="canvas-settings-hint">Stored locally per browser.</span>
+              </span>
+              <span className="canvas-settings-actions">
+                <button
+                  type="button"
+                  className={theme === 'light' ? 'canvas-settings-choice is-active' : 'canvas-settings-choice'}
+                  onClick={() => setTheme('light')}
+                >
+                  Light
+                </button>
+                <button
+                  type="button"
+                  className={theme === 'dark' ? 'canvas-settings-choice is-active' : 'canvas-settings-choice'}
+                  onClick={() => setTheme('dark')}
+                >
+                  Dark
+                </button>
+              </span>
+            </label>
+            <label className="canvas-settings-row">
               <span>
                 <span className="canvas-settings-label">Snap nodes to grid</span>
-                <span className="canvas-settings-hint">Drag positions snap to a 24 px grid.</span>
+                <span className="canvas-settings-hint">Three levels: off, 12 px, 24 px.</span>
+              </span>
+              <span className="canvas-settings-slider-wrap">
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="1"
+                  value={snapGridLevel}
+                  onChange={(event) => setSnapGridLevel(Number(event.target.value))}
+                />
+                <span className="canvas-settings-slider-value">{snapGridLabel(snapGridLevel)}</span>
               </span>
             </label>
           </div>
@@ -1409,7 +1452,7 @@ export function GraphCanvas({
         elementsSelectable={interactive}
         panOnDrag={interactive}
         snapToGrid={snapToGrid}
-        snapGrid={GRAPH_SNAP_GRID}
+        snapGrid={snapGrid}
         fitView
         onInit={setFlow}
         onNodesChange={handleNodesChange}
