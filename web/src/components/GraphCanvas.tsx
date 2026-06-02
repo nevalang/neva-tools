@@ -403,6 +403,32 @@ function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: 
   return result
 }
 
+function estimatedPortPillWidth(port: Port): number {
+  const nameWidth = (port.name?.length ?? 0) * 8
+  const typeWidth = (port.type?.length ?? 0) * 7
+  const gap = port.type ? 10 : 0
+  return Math.max(92, nameWidth + typeWidth + gap + 24)
+}
+
+function fallbackNodeWidth(node: Node<NodeData>): number {
+  if (node.data.kind === 'port') return 88
+  if (node.data.kind === 'const') return 92
+
+  const inWidth = (node.data.inPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
+  const outWidth = (node.data.outPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
+  return Math.max(240, inWidth, outWidth)
+}
+
+function fallbackNodeHeight(node: Node<NodeData>): number {
+  if (node.data.kind === 'port') return 70
+  if (node.data.kind === 'const') return 72
+  return 120 + (node.data.diArgs?.length ?? 0) * 30
+}
+
+function nodeSize(node: Node<NodeData>, measuredSizes?: Map<string, { width: number; height: number }>): { width: number; height: number } {
+  return measuredSizes?.get(node.id) ?? { width: fallbackNodeWidth(node), height: fallbackNodeHeight(node) }
+}
+
 function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeData>[] {
   const components = file.components.map((component) => ({
     id: `entity:${component.id}`,
@@ -629,7 +655,7 @@ function componentDetailEdges(component: Component): Edge[] {
     if (!source || !target) continue
     result.push({
       id: connection.id,
-      type: 'step',
+      type: 'straight',
       source,
       target,
       sourceHandle: connection.sender?.node && connection.sender.node !== 'in' && connection.sender.node !== 'out'
@@ -647,7 +673,7 @@ function componentDetailEdges(component: Component): Edge[] {
     if (shouldAddImplicitInputEdge(component, node.name, inferredInPort)) {
       result.push({
         id: `${component.id}/implicit_in/${inferredInPort}->${node.name}`,
-        type: 'step',
+        type: 'straight',
         source: endpointNodeID(component.id, 'in', inferredInPort),
         target: endpointNodeID(component.id, node.name),
         targetHandle: handleIDForPort(inferredInPort),
@@ -659,7 +685,7 @@ function componentDetailEdges(component: Component): Edge[] {
     }
     result.push({
       id: `${component.id}/implicit_err/${node.name}`,
-      type: 'step',
+      type: 'straight',
       source: endpointNodeID(component.id, node.name),
       target: endpointNodeID(component.id, 'out', 'err'),
       sourceHandle: handleIDForPort('err'),
@@ -675,28 +701,6 @@ async function applyLayout(
   direction: 'DOWN' | 'RIGHT' = 'DOWN',
   measuredSizes?: Map<string, { width: number; height: number }>,
 ): Promise<Node<NodeData>[]> {
-  function estimatedPortPillWidth(port: Port): number {
-    const nameWidth = (port.name?.length ?? 0) * 8
-    const typeWidth = (port.type?.length ?? 0) * 7
-    const gap = port.type ? 10 : 0
-    return Math.max(92, nameWidth + typeWidth + gap + 24)
-  }
-
-  function layoutWidth(node: Node<NodeData>): number {
-    if (node.data.kind === 'port') return 120
-    if (node.data.kind === 'const') return 92
-
-    const inWidth = (node.data.inPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
-    const outWidth = (node.data.outPorts ?? []).reduce((sum, port) => sum + estimatedPortPillWidth(port), 0)
-    return Math.max(320, inWidth, outWidth)
-  }
-
-  function layoutHeight(node: Node<NodeData>): number {
-    if (node.data.kind === 'port') return 70
-    if (node.data.kind === 'const') return 72
-    return 120 + (node.data.diArgs?.length ?? 0) * 30
-  }
-
   const graph = {
     id: 'root',
     layoutOptions: {
@@ -712,8 +716,8 @@ async function applyLayout(
     },
     children: nodes.map((node) => ({
       id: node.id,
-      width: measuredSizes?.get(node.id)?.width ?? layoutWidth(node),
-      height: measuredSizes?.get(node.id)?.height ?? layoutHeight(node),
+      width: nodeSize(node, measuredSizes).width,
+      height: nodeSize(node, measuredSizes).height,
     })),
     edges: edges.map((edge) => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })),
   }
@@ -733,6 +737,35 @@ async function applyLayout(
   })
 }
 
+function handleOffsetX(node: Node<NodeData>, handleID: string | null | undefined, role: 'source' | 'target'): number {
+  const size = nodeSize(node)
+  if (!handleID || node.data.kind !== 'entity') {
+    return size.width / 2
+  }
+
+  const ports = role === 'source' ? (node.data.outPorts ?? []) : (node.data.inPorts ?? [])
+  const portName = handleID.replace(/^port:/u, '')
+  const index = ports.findIndex((port) => port.name === portName)
+  if (index < 0) {
+    return size.width / 2
+  }
+  return ((index + 0.5) * size.width) / ports.length
+}
+
+function nodeHandleX(node: Node<NodeData>, handleID: string | null | undefined, role: 'source' | 'target'): number {
+  return node.position.x + handleOffsetX(node, handleID, role)
+}
+
+function moveNodeHandleToX(node: Node<NodeData>, targetX: number, handleID: string | null | undefined, role: 'source' | 'target'): Node<NodeData> {
+  return {
+    ...node,
+    position: {
+      ...node.position,
+      x: targetX - handleOffsetX(node, handleID, role),
+    },
+  }
+}
+
 function straightenMainVerticalChain(nodes: Node<NodeData>[]): Node<NodeData>[] {
   const find = (suffix: string) => nodes.find((n) => n.id.endsWith(suffix))
   const start = find('::in::start')
@@ -742,10 +775,10 @@ function straightenMainVerticalChain(nodes: Node<NodeData>[]): Node<NodeData>[] 
     return nodes
   }
 
-  const anchorX = call.position.x
+  const anchorX = nodeHandleX(call, undefined, 'target')
   return nodes.map((node) => {
-    if (node.id === start.id || node.id === lit.id || node.id === call.id) {
-      return { ...node, position: { ...node.position, x: anchorX } }
+    if (node.id === start.id || node.id === lit.id) {
+      return moveNodeHandleToX(node, anchorX, undefined, 'source')
     }
     return node
   })
@@ -765,18 +798,18 @@ function reduceBranchCrossings(nodes: Node<NodeData>[], edges: Edge[]): Node<Nod
   const branchTargets = edges
     .filter((edge) => edge.source === call.id && edge.sourceHandle && edge.target !== call.id)
     .map((edge) => ({ target: edge.target, index: portIndex.get(edge.sourceHandle || '') ?? Number.MAX_SAFE_INTEGER }))
-    .filter((item) => Number.isFinite(item.index))
+    .filter((item) => item.index !== Number.MAX_SAFE_INTEGER)
     .sort((a, b) => a.index - b.index)
 
   if (branchTargets.length < 2) {
     return nodes
   }
 
-  const spacing = 260
-  const mid = (branchTargets.length - 1) / 2
   const targetX = new Map<string, number>()
-  for (let i = 0; i < branchTargets.length; i++) {
-    targetX.set(branchTargets[i].target, call.position.x + (i - mid) * spacing)
+  for (const branchTarget of branchTargets) {
+    const portName = outPorts[branchTarget.index]?.name
+    if (!portName) continue
+    targetX.set(branchTarget.target, nodeHandleX(call, handleIDForPort(portName), 'source'))
   }
 
   return nodes.map((node) => {
@@ -784,8 +817,92 @@ function reduceBranchCrossings(nodes: Node<NodeData>[], edges: Edge[]): Node<Nod
     if (x === undefined) {
       return node
     }
-    return { ...node, position: { ...node.position, x } }
+    return moveNodeHandleToX(node, x, undefined, 'target')
   })
+}
+
+function normalizeLayoutOrigin(nodes: Node<NodeData>[], min = 12): Node<NodeData>[] {
+  if (nodes.length === 0) {
+    return nodes
+  }
+
+  const minX = Math.min(...nodes.map((node) => node.position.x))
+  const minY = Math.min(...nodes.map((node) => node.position.y))
+  const dx = minX < min ? min - minX : 0
+  const dy = minY < min ? min - minY : 0
+  if (dx === 0 && dy === 0) {
+    return nodes
+  }
+
+  return nodes.map((node) => ({
+    ...node,
+    position: {
+      x: node.position.x + dx,
+      y: node.position.y + dy,
+    },
+  }))
+}
+
+function layoutSingleCallPipeline(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] | null {
+  const primaryCalls = nodes.filter((node) =>
+    node.id.includes('::node::') &&
+    node.data.kind === 'entity' &&
+    edges.some((edge) => edge.source === node.id),
+  )
+  const call = primaryCalls[0]
+  if (!call || primaryCalls.length !== 1) {
+    return null
+  }
+
+  const inputPorts = nodes.filter((node) => node.id.includes('::in::'))
+  const consts = nodes.filter((node) => node.data.kind === 'const')
+  const outputTargets = edges
+    .filter((edge) => edge.source === call.id)
+    .map((edge) => ({ edge, node: nodes.find((node) => node.id === edge.target) }))
+    .filter((item): item is { edge: Edge; node: Node<NodeData> } => Boolean(item.node))
+
+  const callX = 240
+  const callY = 340
+  const callInputX = callX + handleOffsetX(call, undefined, 'target')
+  const next = new Map(nodes.map((node) => [node.id, { ...node, position: { ...node.position } }]))
+
+  const placedCall = next.get(call.id)
+  if (placedCall) {
+    placedCall.position = { x: callX, y: callY }
+  }
+
+  inputPorts.forEach((node, index) => {
+    const placed = next.get(node.id)
+    if (!placed) return
+    placed.position = {
+      x: callInputX - handleOffsetX(node, undefined, 'source') + index * 96,
+      y: 12,
+    }
+  })
+
+  consts.forEach((node, index) => {
+    const placed = next.get(node.id)
+    if (!placed) return
+    placed.position = {
+      x: callInputX - handleOffsetX(node, undefined, 'source') + index * 108,
+      y: 170,
+    }
+  })
+
+  const outputRows = new Map<string, number>()
+  for (const { edge, node } of outputTargets) {
+    const placed = next.get(node.id)
+    if (!placed) continue
+    const sourceX = callX + handleOffsetX(call, edge.sourceHandle, 'source')
+    const row = outputRows.get(node.id) ?? outputRows.size
+    outputRows.set(node.id, row)
+    placed.position = {
+      x: sourceX - handleOffsetX(node, edge.targetHandle, 'target'),
+      y: callY + fallbackNodeHeight(call) + 130 + row * 120,
+    }
+  }
+
+  return normalizeLayoutOrigin(nodes.map((node) => next.get(node.id) ?? node))
 }
 
 type PersistedLayout = {
@@ -819,15 +936,16 @@ function savePersistedLayout(key: string, payload: PersistedLayout) {
   }
 }
 
-function readMeasuredNodeSizes(nodeIDs: string[]): Map<string, { width: number; height: number }> {
+function readMeasuredNodeSizes(nodeIDs: string[], zoom = 1): Map<string, { width: number; height: number }> {
   const result = new Map<string, { width: number; height: number }>()
+  const scale = zoom > 0 ? zoom : 1
   for (const id of nodeIDs) {
     const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"')
     const element = document.querySelector(`.react-flow__node[data-id="${escaped}"]`) as HTMLElement | null
     if (!element) continue
     const rect = element.getBoundingClientRect()
     if (rect.width > 0 && rect.height > 0) {
-      result.set(id, { width: rect.width, height: rect.height })
+      result.set(id, { width: rect.width / scale, height: rect.height / scale })
     }
   }
   return result
@@ -923,7 +1041,7 @@ export function GraphCanvas({
         }
       }
 
-      const measured = readMeasuredNodeSizes(nextNodes.map((node) => node.id))
+      const measured = readMeasuredNodeSizes(nextNodes.map((node) => node.id), flow?.getZoom() ?? 1)
       let laidOut = await applyLayout(
         nextNodes,
         nextEdges,
@@ -931,8 +1049,7 @@ export function GraphCanvas({
         measured.size > 0 ? measured : undefined,
       )
       if (route.kind === 'entity') {
-        laidOut = straightenMainVerticalChain(laidOut)
-        laidOut = reduceBranchCrossings(laidOut, nextEdges)
+        laidOut = layoutSingleCallPipeline(laidOut, nextEdges) ?? normalizeLayoutOrigin(reduceBranchCrossings(straightenMainVerticalChain(laidOut), nextEdges))
       }
       if (!canceled) {
         const key = routeLayoutKey(route)
@@ -957,7 +1074,7 @@ export function GraphCanvas({
     return () => {
       canceled = true
     }
-  }, [modules, route, file, layoutSeed])
+  }, [modules, route, file, layoutSeed, flow])
 
   async function copyCurrentURL() {
     try {
