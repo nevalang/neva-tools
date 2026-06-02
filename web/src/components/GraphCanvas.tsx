@@ -42,7 +42,7 @@ type Props = {
   onResolveOpen: (target: { fileId: string; entityId: string }) => Promise<void>
 }
 
-type NodeData = {
+export type NodeData = {
   kind: 'entity' | 'port' | 'nav' | 'const'
   navType?: 'module' | 'package' | 'file' | 'component' | 'interface' | 'type' | 'const'
   portRole?: 'in' | 'out'
@@ -60,6 +60,9 @@ type NodeData = {
 }
 
 const elk = new ELK()
+const THEME_STORAGE_KEY = 'neva-lsp:theme'
+const SNAP_GRID_STORAGE_KEY = 'neva-lsp:snap-grid'
+const GRAPH_SNAP_GRID: [number, number] = [24, 24]
 
 function handleOffsets(count: number): string[] {
   if (count <= 0) {
@@ -297,7 +300,7 @@ function inferSelectorSourceInPort(component: Component): string | null {
 }
 
 function moduleNodes(modules: ModuleSummary[]): Node<NodeData>[] {
-  return modules.map((mod) => ({
+  return [...modules].sort((a, b) => a.path.localeCompare(b.path)).map((mod) => ({
     id: `module:${mod.path}`,
     type: 'entityNode',
     className: 'rf-node-clickable rf-node-kind-module',
@@ -316,7 +319,7 @@ function moduleNodes(modules: ModuleSummary[]): Node<NodeData>[] {
 function packageNodes(modules: ModuleSummary[], modulePath: string): Node<NodeData>[] {
   const moduleItem = modules.find((item) => item.path === modulePath)
   if (!moduleItem) return []
-  return moduleItem.packages.map((pkg) => ({
+  return [...moduleItem.packages].sort((a, b) => a.name.localeCompare(b.name)).map((pkg) => ({
     id: `package:${modulePath}:${pkg.name}`,
     type: 'entityNode',
     className: 'rf-node-clickable rf-node-kind-package',
@@ -337,7 +340,7 @@ function fileNodes(modules: ModuleSummary[], modulePath: string, packageName: st
   const moduleItem = modules.find((item) => item.path === modulePath)
   const pkg = moduleItem?.packages.find((item) => item.name === packageName)
   if (!pkg) return []
-  return pkg.fileSummaries.map((file) => ({
+  return [...pkg.fileSummaries].sort((a, b) => a.name.localeCompare(b.name)).map((file) => ({
     id: `file:${file.id}`,
     type: 'entityNode',
     className: 'rf-node-clickable rf-node-kind-file',
@@ -376,6 +379,10 @@ function constPreview(item: ConstDecl): string {
   const value = item.value?.trim()
   if (type && value) return `${type} = ${value}`
   return type || value || item.anchor?.text?.trim() || 'const'
+}
+
+function sortByName<T extends { name: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 function orderedPortList(portMap: Map<string, string> | undefined, parsedPorts: Map<string, string>): Port[] {
@@ -429,8 +436,8 @@ function nodeSize(node: Node<NodeData>, measuredSizes?: Map<string, { width: num
   return measuredSizes?.get(node.id) ?? { width: fallbackNodeWidth(node), height: fallbackNodeHeight(node) }
 }
 
-function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeData>[] {
-  const components = file.components.map((component) => ({
+export function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeData>[] {
+  const components = sortByName(file.components).map((component) => ({
     id: `entity:${component.id}`,
     type: 'entityNode' as const,
     className: `${canDrillComponent(component) ? 'rf-node-clickable ' : ''}rf-node-kind-component${component.id === selectedEntityID ? ' selected' : ''}`,
@@ -448,7 +455,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
     },
   }))
 
-  const interfaces = file.interfaces.map((iface) => ({
+  const interfaces = sortByName(file.interfaces).map((iface) => ({
     id: `entity:${iface.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-interface${iface.id === selectedEntityID ? ' selected' : ''}`,
@@ -466,7 +473,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
     },
   }))
 
-  const types = file.types.map((item) => ({
+  const types = sortByName(file.types).map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-type${item.id === selectedEntityID ? ' selected' : ''}`,
@@ -482,7 +489,7 @@ function fileEntityNodes(file: FileView, selectedEntityID?: string): Node<NodeDa
     },
   }))
 
-  const consts = file.consts.map((item) => ({
+  const consts = sortByName(file.consts).map((item) => ({
     id: `entity:${item.id}`,
     type: 'entityNode' as const,
     className: `rf-node-clickable rf-node-kind-const${item.id === selectedEntityID ? ' selected' : ''}`,
@@ -843,62 +850,180 @@ function normalizeLayoutOrigin(nodes: Node<NodeData>[], min = 12): Node<NodeData
   }))
 }
 
-function layoutSingleCallPipeline(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] | null {
-  const primaryCalls = nodes.filter((node) =>
-    node.id.includes('::node::') &&
-    node.data.kind === 'entity' &&
-    edges.some((edge) => edge.source === node.id),
-  )
-  const call = primaryCalls[0]
-  if (!call || primaryCalls.length !== 1) {
+function isCallNode(node: Node<NodeData>): boolean {
+  return node.id.includes('::node::') && node.data.kind === 'entity'
+}
+
+function alignTargetToSource(
+  target: Node<NodeData>,
+  source: Node<NodeData>,
+  edge: Edge,
+): Node<NodeData> {
+  return moveNodeHandleToX(target, nodeHandleX(source, edge.sourceHandle, 'source'), edge.targetHandle, 'target')
+}
+
+function incomingEdges(nodeID: string, edges: Edge[]): Edge[] {
+  return edges.filter((edge) => edge.target === nodeID)
+}
+
+function outgoingEdges(nodeID: string, edges: Edge[]): Edge[] {
+  return edges.filter((edge) => edge.source === nodeID)
+}
+
+function handleFromConnectionID(edgeID: string, side: 'source' | 'target'): string | undefined {
+  const match = side === 'source'
+    ? edgeID.match(/\/connection\/port_[^_]+_([^.]*)\./u)
+    : edgeID.match(/->port_[^_]+_([^.|]*)/u)
+  const port = match?.[1]
+  return port ? handleIDForPort(port) : undefined
+}
+
+function sourceHandle(edge: Edge): string | undefined {
+  return edge.sourceHandle ?? handleFromConnectionID(edge.id, 'source')
+}
+
+function targetHandle(edge: Edge): string | undefined {
+  return edge.targetHandle ?? handleFromConnectionID(edge.id, 'target')
+}
+
+function handleExistsOnNode(node: Node<NodeData>, handleID: string | undefined, role: 'source' | 'target'): boolean {
+  if (!handleID || node.data.kind !== 'entity') {
+    return true
+  }
+  const portName = handleID.replace(/^port:/u, '')
+  const ports = role === 'source' ? (node.data.outPorts ?? []) : (node.data.inPorts ?? [])
+  return ports.some((port) => port.name === portName)
+}
+
+function sourceHandleForNode(edge: Edge, node: Node<NodeData>): string | undefined {
+  const handle = edge.sourceHandle ?? undefined
+  return handleExistsOnNode(node, handle, 'source') ? handle : handleFromConnectionID(edge.id, 'source')
+}
+
+function targetHandleForNode(edge: Edge, node: Node<NodeData>): string | undefined {
+  const handle = edge.targetHandle ?? undefined
+  return handleExistsOnNode(node, handle, 'target') ? handle : handleFromConnectionID(edge.id, 'target')
+}
+
+function sortedBySourceHandle(edges: Edge[], source: Node<NodeData>): Edge[] {
+  return [...edges].sort((a, b) => {
+    const ax = handleOffsetX(source, sourceHandle(a), 'source')
+    const bx = handleOffsetX(source, sourceHandle(b), 'source')
+    return ax - bx
+  })
+}
+
+function callDepths(calls: Node<NodeData>[], edges: Edge[]): Map<string, number> {
+  const callIDs = new Set(calls.map((node) => node.id))
+  const depth = new Map(calls.map((node) => [node.id, 0]))
+  for (let pass = 0; pass < calls.length; pass += 1) {
+    let changed = false
+    for (const edge of edges) {
+      if (!callIDs.has(edge.source) || !callIDs.has(edge.target)) continue
+      const nextDepth = (depth.get(edge.source) ?? 0) + 1
+      if (nextDepth > (depth.get(edge.target) ?? 0)) {
+        depth.set(edge.target, nextDepth)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+  return depth
+}
+
+export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]): Node<NodeData>[] | null {
+  const calls = nodes.filter(isCallNode)
+  if (calls.length === 0 || calls.length > 8) {
     return null
   }
 
-  const inputPorts = nodes.filter((node) => node.id.includes('::in::'))
-  const consts = nodes.filter((node) => node.data.kind === 'const')
-  const outputTargets = edges
-    .filter((edge) => edge.source === call.id)
-    .map((edge) => ({ edge, node: nodes.find((node) => node.id === edge.target) }))
-    .filter((item): item is { edge: Edge; node: Node<NodeData> } => Boolean(item.node))
-
-  const callX = 240
-  const callY = 340
-  const callInputX = callX + handleOffsetX(call, undefined, 'target')
+  const nodeByID = new Map(nodes.map((node) => [node.id, node]))
+  const depths = callDepths(calls, edges)
+  const orderedCalls = [...calls].sort((a, b) => {
+    const byDepth = (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0)
+    return byDepth || a.data.label.localeCompare(b.data.label)
+  })
   const next = new Map(nodes.map((node) => [node.id, { ...node, position: { ...node.position } }]))
+  const baseX = 260
+  const firstCallY = 330
+  const callGapY = 250
+  const topGapY = 150
+  const sinkGapY = 150
 
-  const placedCall = next.get(call.id)
-  if (placedCall) {
-    placedCall.position = { x: callX, y: callY }
+  for (const [index, call] of orderedCalls.entries()) {
+    const placed = next.get(call.id)
+    if (!placed) continue
+
+    const parentEdge = incomingEdges(call.id, edges)
+      .map((edge) => ({ edge, source: next.get(edge.source) }))
+      .find((item): item is { edge: Edge; source: Node<NodeData> } => Boolean(item.source && isCallNode(item.source)))
+
+    placed.position.y = firstCallY + index * callGapY
+    if (parentEdge) {
+      placed.position.x = alignTargetToSource(placed, parentEdge.source, {
+        ...parentEdge.edge,
+        sourceHandle: sourceHandle(parentEdge.edge),
+        targetHandle: targetHandle(parentEdge.edge),
+      }).position.x
+    } else {
+      placed.position.x = baseX
+    }
   }
 
-  inputPorts.forEach((node, index) => {
-    const placed = next.get(node.id)
-    if (!placed) return
-    placed.position = {
-      x: callInputX - handleOffsetX(node, undefined, 'source') + index * 96,
-      y: 12,
-    }
-  })
+  for (const call of orderedCalls) {
+    const placedCall = next.get(call.id)
+    if (!placedCall) continue
+    const callIncoming = incomingEdges(call.id, edges)
+      .map((edge) => ({ edge, source: next.get(edge.source) }))
+      .filter((item): item is { edge: Edge; source: Node<NodeData> } => Boolean(item.source))
+      .filter(({ source }) => !isCallNode(source))
+      .sort((a, b) => handleOffsetX(placedCall, a.edge.targetHandle, 'target') - handleOffsetX(placedCall, b.edge.targetHandle, 'target'))
 
-  consts.forEach((node, index) => {
-    const placed = next.get(node.id)
-    if (!placed) return
-    placed.position = {
-      x: callInputX - handleOffsetX(node, undefined, 'source') + index * 108,
-      y: 170,
+    for (const [incomingIndex, { edge, source }] of callIncoming.entries()) {
+      const fallbackPort = placedCall.data.inPorts?.[incomingIndex]?.name
+      const effectiveTargetHandle = targetHandleForNode(edge, placedCall) ?? (fallbackPort ? handleIDForPort(fallbackPort) : undefined)
+      const sourceX = nodeHandleX(placedCall, effectiveTargetHandle, 'target')
+      source.position = {
+        ...moveNodeHandleToX(source, sourceX, sourceHandleForNode(edge, source), 'source').position,
+        y: placedCall.position.y - topGapY,
+      }
     }
-  })
+  }
 
-  const outputRows = new Map<string, number>()
-  for (const { edge, node } of outputTargets) {
-    const placed = next.get(node.id)
-    if (!placed) continue
-    const sourceX = callX + handleOffsetX(call, edge.sourceHandle, 'source')
-    const row = outputRows.get(node.id) ?? outputRows.size
-    outputRows.set(node.id, row)
-    placed.position = {
-      x: sourceX - handleOffsetX(node, edge.targetHandle, 'target'),
-      y: callY + fallbackNodeHeight(call) + 130 + row * 120,
+  for (const node of Array.from(next.values()).filter((item) => item.id.includes('::in::'))) {
+    const children = outgoingEdges(node.id, edges)
+      .map((edge) => next.get(edge.target))
+      .filter((item): item is Node<NodeData> => Boolean(item))
+    if (children.length === 0) continue
+    const centerX = children.reduce((sum, child) => sum + nodeHandleX(child, undefined, 'target'), 0) / children.length
+    node.position = {
+      x: centerX - handleOffsetX(node, undefined, 'source'),
+      y: Math.min(...children.map((child) => child.position.y)) - topGapY,
+    }
+  }
+
+  for (const call of orderedCalls) {
+    const placedCall = next.get(call.id)
+    if (!placedCall) continue
+    const terminalEdges = sortedBySourceHandle(outgoingEdges(call.id, edges), placedCall)
+      .map((edge) => ({ edge, target: next.get(edge.target) }))
+      .filter((item): item is { edge: Edge; target: Node<NodeData> } => Boolean(item.target))
+      .filter(({ target }) => !isCallNode(target) || outgoingEdges(target.id, edges).length === 0)
+
+    const occupied = new Set<string>()
+    for (const { edge, target } of terminalEdges) {
+      if (isCallNode(target) && incomingEdges(target.id, edges).some((incoming) => isCallNode(nodeByID.get(incoming.source) as Node<NodeData>))) {
+        continue
+      }
+      const targetY = placedCall.position.y + fallbackNodeHeight(placedCall) + sinkGapY
+      const aligned = alignTargetToSource(target, placedCall, { ...edge, sourceHandle: sourceHandle(edge), targetHandle: targetHandle(edge) })
+      const slot = `${Math.round(aligned.position.x)}:${targetY}`
+      const bump = occupied.has(slot) ? GRAPH_SNAP_GRID[0] * occupied.size : 0
+      occupied.add(slot)
+      target.position = {
+        x: aligned.position.x + bump,
+        y: targetY,
+      }
     }
   }
 
@@ -972,7 +1097,18 @@ export function GraphCanvas({
   const [layoutKey, setLayoutKey] = useState<string | null>(null)
   const [layoutSignature, setLayoutSignature] = useState('')
   const [layoutSeed, setLayoutSeed] = useState(0)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [snapToGrid, setSnapToGrid] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem(SNAP_GRID_STORAGE_KEY) === 'true'
+  })
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY)
+      if (saved === 'dark' || saved === 'light') {
+        return saved
+      }
+    }
     if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark'
     }
@@ -981,7 +1117,20 @@ export function GraphCanvas({
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+    } catch {
+      // Ignore storage errors.
+    }
   }, [theme])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SNAP_GRID_STORAGE_KEY, String(snapToGrid))
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [snapToGrid])
 
   useEffect(() => {
     if (!flow || nodes.length === 0 || layoutVersion === 0) {
@@ -1049,7 +1198,7 @@ export function GraphCanvas({
         measured.size > 0 ? measured : undefined,
       )
       if (route.kind === 'entity') {
-        laidOut = layoutSingleCallPipeline(laidOut, nextEdges) ?? normalizeLayoutOrigin(reduceBranchCrossings(straightenMainVerticalChain(laidOut), nextEdges))
+        laidOut = layoutComponentPipeline(laidOut, nextEdges) ?? normalizeLayoutOrigin(reduceBranchCrossings(straightenMainVerticalChain(laidOut), nextEdges))
       }
       if (!canceled) {
         const key = routeLayoutKey(route)
@@ -1148,6 +1297,14 @@ export function GraphCanvas({
             >
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
+            <button
+              className="canvas-settings-toggle"
+              onClick={() => setSettingsOpen(true)}
+              title="Open graph settings"
+              aria-label="Open graph settings"
+            >
+              ⚙
+            </button>
           </div>
         </div>
         <div className="canvas-breadcrumbs">
@@ -1169,6 +1326,36 @@ export function GraphCanvas({
           </button>
         </div>
       </div>
+      {settingsOpen ? (
+        <div className="canvas-settings-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <div
+            className="canvas-settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Graph settings"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="canvas-settings-header">
+              <div>
+                <div className="canvas-settings-title">Graph settings</div>
+                <div className="canvas-settings-subtitle">Layout behavior is stored locally per browser.</div>
+              </div>
+              <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close graph settings">×</button>
+            </div>
+            <label className="canvas-settings-row">
+              <input
+                type="checkbox"
+                checked={snapToGrid}
+                onChange={(event) => setSnapToGrid(event.target.checked)}
+              />
+              <span>
+                <span className="canvas-settings-label">Snap nodes to grid</span>
+                <span className="canvas-settings-hint">Drag positions snap to a 24 px grid.</span>
+              </span>
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       <ReactFlow
         nodes={nodes}
@@ -1181,6 +1368,8 @@ export function GraphCanvas({
         nodesDraggable={interactive}
         elementsSelectable={interactive}
         panOnDrag={interactive}
+        snapToGrid={snapToGrid}
+        snapGrid={GRAPH_SNAP_GRID}
         fitView
         onInit={setFlow}
         onNodesChange={handleNodesChange}
@@ -1226,7 +1415,7 @@ export function GraphCanvas({
             aria-label="Reset node positions"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6.3 7.3A8 8 0 1 1 4 13h2a6 6 0 1 0 1.8-4.3L10 11H3V4l3.3 3.3Z" />
+              <path d="M4 4h6v6H4V4Zm2 2v2h2V6H6Zm8-2h6v6h-6V4Zm2 2v2h2V6h-2ZM4 14h6v6H4v-6Zm2 2v2h2v-2H6Zm9-1h2v2h-2v-2Zm3 3h2v2h-2v-2Zm-4 0h2v2h-2v-2Zm4-4h2v2h-2v-2Z" />
             </svg>
           </ControlButton>
         </Controls>

@@ -140,14 +140,85 @@ button:disabled {
   font-size: 13px;
 }
 
+.canvas-nav-buttons .canvas-settings-toggle {
+  width: 32px;
+  min-width: 32px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
 .canvas-nav-buttons button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
 }
 
 .canvas-nav-buttons .canvas-copy-url,
-.canvas-nav-buttons .canvas-theme-toggle {
+.canvas-nav-buttons .canvas-theme-toggle,
+.canvas-nav-buttons .canvas-settings-toggle {
   text-transform: none;
+}
+
+.canvas-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 16, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.canvas-settings-panel {
+  width: min(460px, calc(100vw - 32px));
+  border: 1px solid var(--strong-border);
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  color: var(--text);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.28);
+  padding: 18px;
+}
+
+.canvas-settings-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.canvas-settings-title {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.canvas-settings-subtitle,
+.canvas-settings-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.canvas-settings-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--surface) 82%, var(--bg));
+}
+
+.canvas-settings-row input {
+  margin-top: 2px;
+}
+
+.canvas-settings-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
 .canvas-breadcrumbs {
