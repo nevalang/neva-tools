@@ -17,6 +17,7 @@ describe('viewClient normalization', () => {
         nodes: [{
           id: 'n',
           name: 'for_each',
+          typeArgs: ['int'],
           diArgs: [{
             id: 'di',
             name: 'handler',
@@ -31,6 +32,7 @@ describe('viewClient normalization', () => {
 
     expect(file.components[0].inPorts.map((port) => port.name)).toEqual(['from', 'to'])
     expect(file.components[0].inPorts.map((port) => port.order)).toEqual([0, 1])
+    expect(file.components[0].nodes[0].typeArgs).toEqual(['int'])
     expect(file.components[0].nodes[0].diArgs?.[0]).toMatchObject({
       name: 'handler',
       nodeName: 'handler',

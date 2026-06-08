@@ -85,6 +85,7 @@ function normalizeNode(node: Partial<NodeItem>): NodeItem {
     name: node.name ?? '',
     entityRef: node.entityRef,
     resolvedRef: node.resolvedRef,
+    typeArgs: node.typeArgs ?? [],
     diArgs: (node.diArgs ?? []).map((item) => normalizeDINode(item)),
     anchor: node.anchor,
     errGuard: Boolean((node as any).errGuard),

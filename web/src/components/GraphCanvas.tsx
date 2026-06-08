@@ -52,6 +52,8 @@ export type NodeData = {
   showMeta?: boolean
   inPorts?: Port[]
   outPorts?: Port[]
+  typeArgs?: string[]
+  typeParamNames?: string[]
   diArgs?: DINode[]
   onOpenEntity?: (target: { fileId: string; entityId: string }) => void
   fileId?: string
@@ -106,6 +108,16 @@ function entityKindLabel(navType: NodeData['navType'], subtitle?: string): strin
   if (navType === 'type') return subtitle ? `type · ${subtitle}` : 'type'
   if (navType === 'const') return subtitle ? `const · ${subtitle}` : 'const'
   return subtitle
+}
+
+function navBadgeLabel(navType: NodeData['navType']): string | undefined {
+  if (navType === 'package') return 'package'
+  if (navType === 'file') return 'file'
+  return undefined
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
 }
 
 function snapGridLabel(level: number): string {
@@ -344,6 +356,8 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
   const inputHandleStyle = { opacity: 1, pointerEvents: 'none' as const, zIndex: 2, top: showPortBars ? 0 : undefined }
   const outputHandleStyle = { opacity: 1, pointerEvents: 'none' as const, zIndex: 2, bottom: showPortBars ? 0 : undefined }
   const diArgs = data.diArgs ?? []
+  const typeArgs = data.typeArgs ?? []
+  const badgeLabel = data.kind === 'nav' ? navBadgeLabel(data.navType) : undefined
 
   function openDIArg(event: MouseEvent<HTMLButtonElement>, diArg: DINode) {
     event.stopPropagation()
@@ -355,8 +369,9 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
   }
 
   return (
-    <div className={`rf-node${showPortBars && hasInPorts ? ' rf-node-has-inbars' : ''}${showPortBars && hasOutPorts ? ' rf-node-has-outbars' : ''}`}>
+    <div className={`rf-node${badgeLabel ? ' rf-node-has-badge' : ''}${showPortBars && hasInPorts ? ' rf-node-has-inbars' : ''}${showPortBars && hasOutPorts ? ' rf-node-has-outbars' : ''}`}>
       <div className="rf-node-frame">
+        {badgeLabel ? <div className="rf-kind-badge" aria-label={badgeLabel}>{badgeLabel}</div> : null}
         {showPortBars && hasInPorts && (
           <div className="rf-node-port-row rf-node-port-row-top">
             {data.inPorts?.map((port, idx) => (
@@ -378,6 +393,19 @@ function EntityNode({ data }: NodeProps<Node<NodeData>>) {
             <div className="rf-node-subtitle">{entityKindLabel(data.navType)}</div>
           )}
           {data.detail ? <div className="rf-node-detail">{data.detail}</div> : null}
+          {typeArgs.length > 0 ? (
+            <div className="rf-typearg-list" aria-label="Type arguments">
+              {typeArgs.map((typeArg, index) => {
+                const paramName = data.typeParamNames?.[index]
+                return (
+                  <div key={`${paramName ?? index}:${typeArg}`} className="rf-typearg-node">
+                    {paramName ? <span className="rf-typearg-param">{paramName} =</span> : null}
+                    <span className="rf-typearg-value">{typeArg}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
           {diArgs.length > 0 ? (
             <div className="rf-di-list" aria-label="Dependency injections">
               {diArgs.map((diArg) => {
@@ -466,6 +494,53 @@ function diDisplayName(diArg: DINode): string {
   return entityRefName(diArg.entityRef) || resolvedRefName(diArg.resolvedRef) || diArg.nodeName || diArg.name || '?'
 }
 
+function splitTopLevelList(value: string): string[] {
+  const result: string[] = []
+  let start = 0
+  let depth = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const ch = value[index]
+    if (ch === '<' || ch === '{' || ch === '[' || ch === '(') depth += 1
+    if (ch === '>' || ch === '}' || ch === ']' || ch === ')') depth = Math.max(0, depth - 1)
+    if (ch !== ',' || depth !== 0) continue
+    const item = value.slice(start, index).trim()
+    if (item) result.push(item)
+    start = index + 1
+  }
+  const tail = value.slice(start).trim()
+  if (tail) result.push(tail)
+  return result
+}
+
+function rawTypeArgsFromAnchor(anchorText: string | undefined, entityName: string): string[] {
+  if (!anchorText || !entityName) {
+    return []
+  }
+  const normalized = anchorText.replace(/\s+/g, '')
+  const escaped = entityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = normalized.match(new RegExp(`${escaped}<(.+)>`))
+  return match?.[1] ? splitTopLevelList(match[1]) : []
+}
+
+function typeParamNamesFromSignature(signatureText: string | undefined): string[] {
+  if (!signatureText) {
+    return []
+  }
+  const normalized = signatureText.replace(/\s+/g, '')
+  const match = normalized.match(/^[A-Za-z_][A-Za-z0-9_.]*<([^()]*)>\(/)
+  if (!match?.[1]) {
+    return []
+  }
+  return Array.from(match[1].matchAll(/([A-Z][A-Za-z0-9_]*?)(?=(?:struct|stream|error|string|float|bool|int|any|[{},]|$))/g))
+    .map((item) => item[1])
+    .filter((item): item is string => Boolean(item))
+}
+
+export function nodeTypeArgs(node: { anchor?: { text?: string }; entityRef?: unknown; typeArgs?: string[]; resolvedRef?: ResolvedRef }): string[] {
+  const rawTypeArgs = rawTypeArgsFromAnchor(node.anchor?.text, entityRefName(node.entityRef))
+  return rawTypeArgs.length > 0 ? rawTypeArgs : (node.typeArgs ?? [])
+}
+
 function endpointNodeID(componentID: string, localNodeName: string, portName?: string): string {
   if (localNodeName === 'in') {
     return `${componentID}::in::${portName ?? '_'}`
@@ -547,14 +622,14 @@ function moduleNodes(modules: ModuleSummary[]): Node<NodeData>[] {
       kind: 'nav',
       navType: 'module',
       label: mod.path,
-      subtitle: `${mod.packages.length} packages`,
+      subtitle: countLabel(mod.packages.length, 'package'),
       showMeta: true,
       modulePath: mod.path,
     },
   }))
 }
 
-function packageNodes(modules: ModuleSummary[], modulePath: string): Node<NodeData>[] {
+export function packageNodes(modules: ModuleSummary[], modulePath: string): Node<NodeData>[] {
   const moduleItem = modules.find((item) => item.path === modulePath)
   if (!moduleItem) return []
   return [...moduleItem.packages].sort((a, b) => a.name.localeCompare(b.name)).map((pkg) => ({
@@ -566,7 +641,7 @@ function packageNodes(modules: ModuleSummary[], modulePath: string): Node<NodeDa
       kind: 'nav',
       navType: 'package',
       label: pkg.name,
-      subtitle: `${pkg.fileSummaries.length} files`,
+      subtitle: `package · ${countLabel(pkg.fileSummaries.length, 'file')}`,
       showMeta: true,
       modulePath,
       packageName: pkg.name,
@@ -574,7 +649,7 @@ function packageNodes(modules: ModuleSummary[], modulePath: string): Node<NodeDa
   }))
 }
 
-function fileNodes(modules: ModuleSummary[], modulePath: string, packageName: string): Node<NodeData>[] {
+export function fileNodes(modules: ModuleSummary[], modulePath: string, packageName: string): Node<NodeData>[] {
   const moduleItem = modules.find((item) => item.path === modulePath)
   const pkg = moduleItem?.packages.find((item) => item.name === packageName)
   if (!pkg) return []
@@ -587,7 +662,7 @@ function fileNodes(modules: ModuleSummary[], modulePath: string, packageName: st
       kind: 'nav',
       navType: 'file',
       label: `${file.name}.neva`,
-      subtitle: `${modulePath}/${packageName}`,
+      subtitle: 'file',
       showMeta: true,
       fileId: file.id,
     },
@@ -722,7 +797,7 @@ function fallbackNodeHeight(node: Node<NodeData>): number {
   if (node.data.kind === 'port') return 70
   if (node.data.kind === 'const') return 72
   if (node.data.kind === 'nav') return fileEntityNodeHeight(node)
-  return 120 + (node.data.diArgs?.length ?? 0) * 30
+  return 120 + (node.data.typeArgs?.length ?? 0) * 32 + (node.data.diArgs?.length ?? 0) * 30
 }
 
 function nodeSize(node: Node<NodeData>, measuredSizes?: Map<string, { width: number; height: number }>): { width: number; height: number } {
@@ -902,6 +977,7 @@ function componentDetailNodes(
   for (const node of component.nodes) {
     const ref = node.resolvedRef
     const sourceLikeRef = entityRefName(node.entityRef) || ref?.canonicalRef
+    const typeArgs = nodeTypeArgs(node)
     const ports = nodePortKinds.get(node.name)
     const parsed = parseSignaturePorts(
       node.resolvedRef?.anchor?.text,
@@ -920,6 +996,8 @@ function componentDetailNodes(
         showMeta,
         inPorts: orderedPortList(ports?.in, parsed.in),
         outPorts: orderedPortList(ports?.out, parsed.out),
+        typeArgs,
+        typeParamNames: typeParamNamesFromSignature(ref?.anchor?.text),
         diArgs: node.diArgs,
         onOpenEntity,
         fileId: ref?.fileId,
@@ -1050,7 +1128,7 @@ export function catalogColumnCount(route: Route, nodes: Node<NodeData>[]): numbe
   const viewportWidth = typeof window === 'undefined' ? 1200 : Math.max(720, window.innerWidth - 96)
   const widest = Math.max(...nodes.map((node) => fallbackNodeWidth(node)))
   const possible = Math.max(1, Math.floor((viewportWidth + 36) / (widest + 36)))
-  return Math.min(Math.max(1, possible), 3, nodes.length)
+  return Math.min(Math.max(1, possible), 4, nodes.length)
 }
 
 export function layoutCatalogGrid(nodes: Node<NodeData>[], columns: number): Node<NodeData>[] {
@@ -1203,6 +1281,65 @@ function normalizeLayoutOrigin(nodes: Node<NodeData>[], min = 12): Node<NodeData
   }))
 }
 
+function rectanglesOverlap(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+  minGap: number,
+): boolean {
+  return first.x < second.x + second.width + minGap
+    && first.x + first.width + minGap > second.x
+    && first.y < second.y + second.height + minGap
+    && first.y + first.height + minGap > second.y
+}
+
+function avoidNodeOverlaps(nodes: Node<NodeData>[], minGap = 24): Node<NodeData>[] {
+  if (nodes.length <= 1) {
+    return nodes
+  }
+
+  const positions = new Map(nodes.map((node) => [node.id, { ...node.position }]))
+  const placed: Node<NodeData>[] = []
+  const rowBand = (node: Node<NodeData>) => Math.round(node.position.y / 96)
+  const ordered = [...nodes].sort((a, b) => rowBand(a) - rowBand(b) || a.position.x - b.position.x || a.position.y - b.position.y)
+
+  for (const node of ordered) {
+    const size = nodeSize(node)
+    const position = positions.get(node.id) ?? node.position
+    let candidate = { x: position.x, y: position.y, width: size.width, height: size.height }
+    let changed = true
+
+    for (let pass = 0; changed && pass < nodes.length; pass += 1) {
+      changed = false
+      for (const other of placed) {
+        const otherPosition = positions.get(other.id) ?? other.position
+        const otherSize = nodeSize(other)
+        const otherRect = {
+          x: otherPosition.x,
+          y: otherPosition.y,
+          width: otherSize.width,
+          height: otherSize.height,
+        }
+        if (!rectanglesOverlap(candidate, otherRect, minGap)) {
+          continue
+        }
+        candidate = {
+          ...candidate,
+          x: otherRect.x + otherRect.width + minGap,
+        }
+        changed = true
+      }
+    }
+
+    positions.set(node.id, { x: candidate.x, y: candidate.y })
+    placed.push(node)
+  }
+
+  return nodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }))
+}
+
 function isCallNode(node: Node<NodeData>): boolean {
   return node.id.includes('::node::') && node.data.kind === 'entity'
 }
@@ -1344,14 +1481,17 @@ export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]):
   }
 
   for (const node of Array.from(next.values()).filter((item) => item.id.includes('::in::'))) {
-    const children = outgoingEdges(node.id, edges)
-      .map((edge) => next.get(edge.target))
-      .filter((item): item is Node<NodeData> => Boolean(item))
-    if (children.length === 0) continue
-    const centerX = children.reduce((sum, child) => sum + nodeHandleX(child, undefined, 'target'), 0) / children.length
+    const outgoing = outgoingEdges(node.id, edges)
+      .map((edge) => ({ edge, target: next.get(edge.target) }))
+      .filter((item): item is { edge: Edge; target: Node<NodeData> } => Boolean(item.target))
+    if (outgoing.length === 0) continue
+    const centerX = outgoing.reduce((sum, { edge, target }) => {
+      const targetHandleID = targetHandleForNode(edge, target)
+      return sum + nodeHandleX(target, targetHandleID, 'target')
+    }, 0) / outgoing.length
     node.position = {
       x: centerX - handleOffsetX(node, undefined, 'source'),
-      y: Math.min(...children.map((child) => child.position.y)) - topGapY,
+      y: Math.min(...outgoing.map(({ target }) => target.position.y)) - topGapY,
     }
   }
 
@@ -1380,7 +1520,7 @@ export function layoutComponentPipeline(nodes: Node<NodeData>[], edges: Edge[]):
     }
   }
 
-  return normalizeLayoutOrigin(nodes.map((node) => next.get(node.id) ?? node))
+  return normalizeLayoutOrigin(avoidNodeOverlaps(nodes.map((node) => next.get(node.id) ?? node)))
 }
 
 export function shouldUseMeasuredLayoutSizes(route: Route, edgeCount: number): boolean {
@@ -1393,7 +1533,7 @@ type PersistedLayout = {
 }
 
 function routeLayoutKey(route: Route): string {
-  return `neva-lsp:layout:v1:${routeToHash(route)}`
+  return `neva-lsp:layout:v2:${routeToHash(route)}`
 }
 
 function nodeSignature(nodes: Node<NodeData>[]): string {

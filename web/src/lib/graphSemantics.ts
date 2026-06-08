@@ -1,9 +1,32 @@
 import type { Component, FileView } from './types'
 
-export function parsePortList(raw: string, knownNames: string[]): Map<string, string> {
+function parseSignatureTypeParamNames(signatureText: string | undefined): string[] {
+  if (!signatureText) {
+    return []
+  }
+  const normalized = signatureText.replace(/\s+/g, '')
+  const generic = normalized.match(/^[A-Za-z_][A-Za-z0-9_.]*<([^()]*)>\(/)
+  if (!generic?.[1]) {
+    return []
+  }
+  return Array.from(generic[1].matchAll(/([A-Z][A-Za-z0-9_]*?)(?=(?:struct|stream|error|string|float|bool|int|any|[{},]|$))/g))
+    .map((match) => match[1])
+    .filter((name): name is string => Boolean(name))
+}
+
+export function parsePortList(raw: string, knownNames: string[], typeParamNames: string[] = []): Map<string, string> {
   const result = new Map<string, string>()
   const known = [...knownNames].sort((a, b) => b.length - a.length)
-  const compactTypeStarts = ['stream<', 'error', 'string', 'float', 'bool', 'int', 'any']
+  const compactTypeStarts = [
+    ...typeParamNames.sort((a, b) => b.length - a.length),
+    'stream<',
+    'error',
+    'string',
+    'float',
+    'bool',
+    'int',
+    'any',
+  ]
 
   function splitCompactToken(item: string): { name: string; type: string } | null {
     for (const marker of compactTypeStarts) {
@@ -55,9 +78,10 @@ export function parseSignaturePorts(
   if (!pair) {
     return { in: new Map<string, string>(), out: new Map<string, string>() }
   }
+  const typeParamNames = parseSignatureTypeParamNames(signatureText)
   return {
-    in: parsePortList(pair[1] ?? '', knownInNames),
-    out: parsePortList(pair[2] ?? '', knownOutNames),
+    in: parsePortList(pair[1] ?? '', knownInNames, typeParamNames),
+    out: parsePortList(pair[2] ?? '', knownOutNames, typeParamNames),
   }
 }
 
@@ -78,7 +102,7 @@ function parseSignaturePortNames(
   if (!raw) {
     return []
   }
-  const parsed = parsePortList(raw, knownNames)
+  const parsed = parsePortList(raw, knownNames, parseSignatureTypeParamNames(signatureText))
   if (parsed.size > 0) {
     return Array.from(parsed.keys())
   }

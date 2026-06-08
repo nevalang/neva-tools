@@ -21,6 +21,11 @@ describe('graphSemantics', () => {
     expect(parsed.out.get('err')).toBe('error')
   })
 
+  it('splits compact generic output ports using signature type parameters', () => {
+    const parsed = parseSignaturePorts('Struct<Tstruct{}>()(resT)', [], [])
+    expect(Array.from(parsed.out.entries())).toEqual([['res', 'T']])
+  })
+
   it('infers implicit output as res for errGuard nodes', () => {
     const c = baseComponent()
     expect(inferImplicitPortName(c, 'println', 'out')).toBe('res')

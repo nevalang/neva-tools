@@ -316,6 +316,7 @@ button:disabled {
 }
 
 .rf-node-frame {
+  position: relative;
   overflow: hidden;
   border: 1px solid var(--strong-border);
   background: var(--surface);
@@ -338,6 +339,42 @@ button:disabled {
   min-height: 72px;
   padding: 12px 12px 10px;
   box-sizing: border-box;
+}
+
+.rf-node-has-badge .rf-node-body {
+  padding-right: 72px;
+}
+
+.rf-kind-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid color-mix(in srgb, var(--strong-border) 46%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: color-mix(in srgb, var(--surface) 74%, var(--bg));
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.react-flow__node.rf-node-kind-package .rf-kind-badge {
+  border-color: color-mix(in srgb, var(--kind-package) 54%, var(--strong-border));
+  background: color-mix(in srgb, var(--kind-package) 14%, var(--surface));
+  color: color-mix(in srgb, var(--kind-package) 78%, var(--text));
+}
+
+.react-flow__node.rf-node-kind-file .rf-kind-badge {
+  border-color: color-mix(in srgb, var(--kind-file) 54%, var(--strong-border));
+  background: color-mix(in srgb, var(--kind-file) 14%, var(--surface));
+  color: color-mix(in srgb, var(--kind-file) 78%, var(--text));
 }
 
 .rf-node-header {
@@ -375,6 +412,41 @@ button:disabled {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+.rf-typearg-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rf-typearg-node {
+  min-height: 26px;
+  border: 1px solid color-mix(in srgb, var(--kind-type) 42%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--kind-type) 12%, var(--surface));
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.rf-typearg-param {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.rf-typearg-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-weight: 700;
 }
 
 .rf-di-list {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from '@xyflow/react'
-import { catalogColumnCount, fileEntityNodes, layoutCatalogGrid, layoutComponentPipeline, shouldUseMeasuredLayoutSizes, type NodeData } from './GraphCanvas'
-import type { FileView } from '../lib/types'
+import { catalogColumnCount, fileEntityNodes, fileNodes, layoutCatalogGrid, layoutComponentPipeline, nodeTypeArgs, packageNodes, shouldUseMeasuredLayoutSizes, type NodeData } from './GraphCanvas'
+import type { FileView, ModuleSummary } from '../lib/types'
 
 describe('GraphCanvas helpers', () => {
   it('preserves entity order provided by the API', () => {
@@ -87,6 +87,90 @@ describe('GraphCanvas helpers', () => {
     expect(third.position.y).toBeGreaterThanOrEqual(first.position.y + 150)
   })
 
+  it('labels package and file catalog nodes without repeating package paths', () => {
+    const modules: ModuleSummary[] = [{
+      path: '@',
+      packages: [{
+        name: 'image_png',
+        fileSummaries: [{ id: 'module/@/package/image_png/file/main', name: 'main' }],
+      }],
+    }]
+
+    const packages = packageNodes(modules, '@')
+    expect(packages[0].data.subtitle).toBe('package · 1 file')
+    expect(packages[0].data.navType).toBe('package')
+
+    const files = fileNodes(modules, '@', 'image_png')
+    expect(files[0].data.label).toBe('main.neva')
+    expect(files[0].data.subtitle).toBe('file')
+  })
+
+  it('allows four catalog columns on wide module and package views', () => {
+    const previousWindow = globalThis.window
+    Object.defineProperty(globalThis, 'window', {
+      value: { innerWidth: 1600 },
+      configurable: true,
+    })
+
+    const nodes: Node<NodeData>[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `package-${index}`,
+      type: 'entityNode',
+      position: { x: 0, y: 0 },
+      data: { kind: 'nav', navType: 'package', label: `pkg_${index}`, subtitle: 'package · 1 file' },
+    }))
+
+    expect(catalogColumnCount({ kind: 'module', modulePath: '@' }, nodes)).toBe(4)
+    Object.defineProperty(globalThis, 'window', {
+      value: previousWindow,
+      configurable: true,
+    })
+  })
+
+  it('keeps multiple input port nodes separated when they target one call', () => {
+    const nodes: Node<NodeData>[] = [
+      portNode('component/NewPixel@0::in::c', 'in', 'c', 'image.RGBA'),
+      portNode('component/NewPixel@0::in::x', 'in', 'x', 'int'),
+      portNode('component/NewPixel@0::in::y', 'in', 'y', 'int'),
+      callNode(
+        'component/NewPixel@0::node::pb',
+        'pb',
+        [{ name: 'color', type: '' }, { name: 'x', type: '' }, { name: 'y', type: '' }],
+        [{ name: 'resT', type: '' }],
+      ),
+      portNode('component/NewPixel@0::out::pixel', 'out', 'pixel', 'image.Pixel'),
+    ]
+    const edges: Edge[] = [
+      { id: 'c-color', source: nodes[0].id, target: nodes[3].id, targetHandle: 'port:color' },
+      { id: 'x-x', source: nodes[1].id, target: nodes[3].id, targetHandle: 'port:x' },
+      { id: 'y-y', source: nodes[2].id, target: nodes[3].id, targetHandle: 'port:y' },
+      { id: 'pb-pixel', source: nodes[3].id, target: nodes[4].id, sourceHandle: 'port:resT' },
+    ]
+
+    const laidOut = layoutComponentPipeline(nodes, edges)
+    expect(laidOut).not.toBeNull()
+    const inputPorts = laidOut!
+      .filter((node) => node.id.includes('::in::'))
+      .sort((a, b) => a.position.x - b.position.x)
+
+    expect(inputPorts.map((node) => node.data.label)).toEqual(['c', 'x', 'y'])
+    expect(inputPorts[1].position.x - inputPorts[0].position.x).toBeGreaterThanOrEqual(112)
+    expect(inputPorts[2].position.x - inputPorts[1].position.x).toBeGreaterThanOrEqual(112)
+  })
+
+  it('prefers source-level type arguments for node display', () => {
+    expect(nodeTypeArgs({
+      anchor: { text: 'pbStruct<image.Pixel>' },
+      entityRef: { name: 'Struct' },
+      typeArgs: ['{ color { a int, b int, g int, r int }, x int, y int }'],
+    })).toEqual(['image.Pixel'])
+
+    expect(nodeTypeArgs({
+      anchor: { text: 'pbStruct' },
+      entityRef: { name: 'Struct' },
+      typeArgs: ['{ x int }'],
+    })).toEqual(['{ x int }'])
+  })
+
   it('lays out a two-call component pipeline by port order', () => {
     const nodes: Node<NodeData>[] = [
       portNode('component/Main@0::in::start', 'in', 'start'),
@@ -130,17 +214,18 @@ describe('GraphCanvas helpers', () => {
     expect(age.position.x).toBeLessThan(name.position.x)
     expect(builder.position.y).toBeLessThan(println.position.y)
     expect(stop.position.x).toBeLessThan(panic.position.x)
+    expect(panic.position.x - stop.position.x).toBeGreaterThanOrEqual(112)
     expect(stop.position.y).toBeGreaterThan(println.position.y)
     expect(panic.position.y).toBeGreaterThan(println.position.y)
   })
 })
 
-function portNode(id: string, portRole: 'in' | 'out', label: string): Node<NodeData> {
+function portNode(id: string, portRole: 'in' | 'out', label: string, subtitle = 'any'): Node<NodeData> {
   return {
     id,
     type: 'entityNode',
     position: { x: 0, y: 0 },
-    data: { kind: 'port', portRole, label, subtitle: 'any' },
+    data: { kind: 'port', portRole, label, subtitle },
   }
 }
 

@@ -61,6 +61,7 @@ export type NodeItem = {
   name: string
   entityRef?: unknown
   resolvedRef?: ResolvedRef
+  typeArgs?: string[]
   diArgs?: DINode[]
   anchor?: SourceAnchor
   errGuard?: boolean
