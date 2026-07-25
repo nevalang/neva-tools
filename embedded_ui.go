@@ -1,13 +1,11 @@
 package main
 
 import (
-	"embed"
 	"io/fs"
+
+	"github.com/nevalang/neva-lsp/internal/viewassets"
 )
 
-//go:embed web/dist/*
-var embeddedWebDist embed.FS
-
 func embeddedWebDistFS() (fs.FS, error) {
-	return fs.Sub(embeddedWebDist, "web/dist")
+	return viewassets.FS()
 }

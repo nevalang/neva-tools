@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,39 +13,20 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/nevalang/neva-lsp/internal/viewassets"
+	"github.com/nevalang/neva-lsp/internal/viewserver"
 	ast "github.com/nevalang/neva/pkg/ast"
-	"github.com/nevalang/neva/pkg/indexer"
 	"github.com/nevalang/neva/pkg/view"
 	"github.com/tliron/commonlog"
 	"gopkg.in/yaml.v3"
 )
 
 func runStandaloneView(logger commonlog.Logger, workspacePath string, listenAddr string, openBrowserFlag bool) error {
-	idx, err := indexer.NewDefault(logger)
+	ui, err := viewassets.FS()
 	if err != nil {
-		return fmt.Errorf("create indexer: %w", err)
+		return fmt.Errorf("load visual-editor UI: %w", err)
 	}
-
-	build, found, scanErr := idx.FullScan(context.Background(), workspacePath)
-	if scanErr != nil {
-		return fmt.Errorf("scan workspace: %w", scanErr)
-	}
-	if !found {
-		return errors.New("no Neva module found in workspace")
-	}
-
-	manifestCurrent := readManifestView(workspacePath)
-	scope := detectWorkspaceProgramScope(workspacePath)
-	mux := buildStandaloneMux(workspacePath, &build, manifestCurrent, scope)
-
-	url := "http://" + listenAddr
-	logger.Info("standalone visual view running", "url", url)
-	if openBrowserFlag {
-		_ = openBrowser(url)
-	}
-
-	server := &http.Server{Addr: listenAddr, Handler: mux}
-	return server.ListenAndServe()
+	return viewserver.Run(logger, viewserver.Config{WorkspacePath: workspacePath, ListenAddr: listenAddr, OpenBrowser: openBrowserFlag, UI: ui})
 }
 
 func buildStandaloneMux(workspacePath string, build *ast.Build, manifestCurrent manifestView, scope workspaceProgramScope) *http.ServeMux {
