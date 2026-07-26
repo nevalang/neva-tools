@@ -29,3 +29,19 @@ web/                React visual-editor source
 ```
 
 `internal/viewservice` is shared by LSP JSON-RPC methods and the standalone View HTTP API. HTTP serving and browser launching are deliberately View-only and remain under `cmd/neva-view`.
+
+## Release boundaries
+
+One repository does not imply one release cycle. The independently consumable
+components are released from component-prefixed tags:
+
+- `neva-lsp/vX.Y.Z` publishes the six supported `neva-lsp` binaries and
+  `SHA256SUMS`.
+- `visual-editor/vX.Y.Z` publishes the VS Code WebView bundle and its
+  `SHA256SUMS`.
+- `neva-view` is a standalone CLI. It receives its own release only when it is
+  distributed independently; it is not a dependency of VS Code.
+
+The tags may initially point to the same source commit, but their versions are
+independent contracts. Do not create a repository-wide `vX.Y.Z` release for
+these components.

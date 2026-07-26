@@ -1,0 +1,41 @@
+name: Release Neva Visual Editor
+
+on:
+  push:
+    tags:
+      - 'visual-editor/v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the VS Code WebView bundle
+        working-directory: web
+        run: |
+          npm ci
+          npm run build:vscode
+
+      - name: Archive bundle and write checksum
+        run: |
+          tar -C dist -czf neva-visual-editor.tar.gz webview
+          sha256sum neva-visual-editor.tar.gz > SHA256SUMS
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Neva Visual Editor ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            neva-visual-editor.tar.gz
+            SHA256SUMS
