@@ -1,7 +1,7 @@
 // Language feature handlers provide completion-oriented authoring assistance.
 // The current completion pipeline first tries context-specific suggestions (ports and imports),
 // then falls back to broad project symbols (keywords, local nodes, package entities, aliases).
-package main
+package lsp
 
 import (
 	"fmt"

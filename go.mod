@@ -1,4 +1,4 @@
-module github.com/nevalang/neva-lsp
+module github.com/nevalang/neva-tools
 
 go 1.26
 
