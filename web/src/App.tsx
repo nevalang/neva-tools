@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { GraphCanvas } from './components/GraphCanvas'
 import { inferInitialRoute, routeExistsInProgram, type AppRoute } from './lib/appSemantics'
 import { parseHashRoute, routeToHash } from './lib/routeCodec'
-import { viewClient } from './lib/viewClient'
+import type { ViewBackend } from './lib/viewClient'
 import type { FileView, ModuleSummary, Program } from './lib/types'
 
 type Route = AppRoute
@@ -62,7 +62,7 @@ function fileDisplayName(fileID: string): string {
 }
 
 
-export function App() {
+export function App({ backend }: { backend: ViewBackend }) {
   const [modules, setModules] = useState<ModuleSummary[]>([])
   const [programMeta, setProgramMeta] = useState<Pick<Program, 'entryFileIds'>>({})
   const [route, setRoute] = useState<Route>(() => parseHashRoute(window.location.hash))
@@ -70,20 +70,31 @@ export function App() {
   const [backStack, setBackStack] = useState<Route[]>([])
   const [forwardStack, setForwardStack] = useState<Route[]>([])
 
-  useEffect(() => {
+  const reloadProgram = useCallback(async () => {
+    const program = await backend.getProgram({
+      includeCurrent: true,
+      includeDeps: true,
+      includeStd: true,
+    })
+    setModules(program.modules)
+    setProgramMeta({ entryFileIds: program.entryFileIds })
+
+    const initialRoute = inferInitialRoute(program)
+    const hasExplicitHash = window.location.hash.replace(/^#/, '').length > 0
+    setRoute((current) => {
+      if (hasExplicitHash && routeExistsInProgram(current, program.modules)) return current
+      if (routeKey(initialRoute) === routeKey(current)) return current
+      window.history.replaceState({}, '', routeToHash(initialRoute))
+      return initialRoute
+    })
+  }, [backend])
+
+  useEffect(() => { void reloadProgram() }, [reloadProgram])
+
+  useEffect(() => backend.onRefresh(() => {
+    setFileCache({})
     void reloadProgram()
-  }, [])
-
-  useEffect(() => {
-    function onRefresh(event: MessageEvent<{ type?: string }>) {
-      if (event.data?.type !== 'neva/view/refresh') return
-      setFileCache({})
-      void reloadProgram()
-    }
-
-    window.addEventListener('message', onRefresh)
-    return () => window.removeEventListener('message', onRefresh)
-  }, [])
+  }), [backend, reloadProgram])
 
   useEffect(() => {
     const fileID = routeFileID(route)
@@ -91,7 +102,7 @@ export function App() {
       return
     }
 
-    void viewClient.getFileView(fileID)
+    void backend.getFileView(fileID)
       .then((file) => {
         setFileCache((prev) => ({ ...prev, [fileID]: file }))
       })
@@ -122,29 +133,6 @@ export function App() {
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
-
-  async function reloadProgram() {
-    const program = await viewClient.getProgram({
-      includeCurrent: true,
-      includeDeps: true,
-      includeStd: true,
-    })
-    setModules(program.modules)
-    setProgramMeta({ entryFileIds: program.entryFileIds })
-
-    const initialRoute = inferInitialRoute(program)
-    const hasExplicitHash = window.location.hash.replace(/^#/, '').length > 0
-    setRoute((current) => {
-      if (hasExplicitHash && routeExistsInProgram(current, program.modules)) {
-        return current
-      }
-      if (routeKey(initialRoute) === routeKey(current)) {
-        return current
-      }
-      window.history.replaceState({}, '', routeToHash(initialRoute))
-      return initialRoute
-    })
-  }
 
   function navigate(next: Route, trackNav = true) {
     if (routesEqual(route, next)) {
@@ -237,7 +225,7 @@ export function App() {
   }, [route])
 
   async function resolveAndOpen(target: { fileId: string; entityId: string }) {
-    const result = await viewClient.resolveEntityRef(target.fileId, target.entityId)
+    const result = await backend.resolveEntityRef(target.fileId, target.entityId)
     const nextRoute: Route = { kind: 'entity', fileId: result.targetFileId, entityId: result.targetEntityId }
     navigate(nextRoute, true)
   }
