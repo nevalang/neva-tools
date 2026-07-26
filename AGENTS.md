@@ -33,15 +33,24 @@ web/                React visual-editor source
 ## Release boundaries
 
 One repository does not imply one release cycle. The independently consumable
-components are released from component-prefixed tags:
+components use these exact tag and GitHub Release naming conventions:
 
-- `neva-lsp/vX.Y.Z` publishes the six supported `neva-lsp` binaries and
+- `lsp/vX.Y.Z` → `LSP vX.Y.Z`: six supported `neva-lsp` binaries and
   `SHA256SUMS`.
-- `visual-editor/vX.Y.Z` publishes the VS Code WebView bundle and its
-  `SHA256SUMS`.
-- `neva-view` is a standalone CLI. It receives its own release only when it is
-  distributed independently; it is not a dependency of VS Code.
+- `visual-editor/vX.Y.Z` → `Visual Editor vX.Y.Z`: VS Code WebView bundle and
+  its `SHA256SUMS`.
+- `view/vX.Y.Z` → `View vX.Y.Z`: six supported `neva-view` binaries with the
+  browser UI embedded, plus `SHA256SUMS`. It is not a dependency of VS Code.
 
 The tags may initially point to the same source commit, but their versions are
 independent contracts. Do not create a repository-wide `vX.Y.Z` release for
 these components.
+
+### Stable and beta releases
+
+- Stable: use `component/vX.Y.Z`; its GitHub Release is published normally.
+- Beta: use `component/vX.Y.Z-beta.N` (for example `view/v0.2.0-beta.1`). The
+  release workflow marks it as a GitHub prerelease automatically.
+- Alpha and release-candidate tags use the same shape: `-alpha.N` and `-rc.N`.
+- Create the tag only after its release workflow is merged into `main`; never
+  move or reuse a published component tag.

@@ -1,16 +1,41 @@
-name: Release Neva LSP
+name: Release View
 
 on:
   push:
     tags:
-      - 'lsp/v*'
+      - 'view/v*'
 
 permissions:
   contents: write
 
 jobs:
+  build-ui:
+    name: Build embedded UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the embedded browser UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: view-assets
+          path: cmd/neva-view/assets
+          if-no-files-found: error
+
   build:
     name: Build ${{ matrix.target.name }}
+    needs: build-ui
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,29 +44,34 @@ jobs:
           - name: darwin-amd64
             goos: darwin
             goarch: amd64
-            output: neva-lsp-darwin-amd64
+            output: neva-view-darwin-amd64
           - name: darwin-arm64
             goos: darwin
             goarch: arm64
-            output: neva-lsp-darwin-arm64
+            output: neva-view-darwin-arm64
           - name: linux-amd64
             goos: linux
             goarch: amd64
-            output: neva-lsp-linux-amd64
+            output: neva-view-linux-amd64
           - name: linux-arm64
             goos: linux
             goarch: arm64
-            output: neva-lsp-linux-arm64
+            output: neva-view-linux-arm64
           - name: windows-amd64
             goos: windows
             goarch: amd64
-            output: neva-lsp-windows-amd64.exe
+            output: neva-view-windows-amd64.exe
           - name: windows-arm64
             goos: windows
             goarch: arm64
-            output: neva-lsp-windows-arm64.exe
+            output: neva-view-windows-arm64.exe
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: view-assets
+          path: cmd/neva-view/assets
 
       - uses: actions/setup-go@v5
         with:
@@ -52,7 +82,7 @@ jobs:
         run: |
           mkdir -p release
           CGO_ENABLED=0 GOOS=${{ matrix.target.goos }} GOARCH=${{ matrix.target.goarch }} \
-            go build -ldflags='-s -w' -o "release/${{ matrix.target.output }}" ./cmd/neva-lsp
+            go build -ldflags='-s -w' -o "release/${{ matrix.target.output }}" ./cmd/neva-view
 
       - uses: actions/upload-artifact@v4
         with:
@@ -61,7 +91,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish LSP release
+    name: Publish View release
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -76,12 +106,12 @@ jobs:
 
       - name: Write checksums
         working-directory: release
-        run: sha256sum neva-lsp-* > SHA256SUMS
+        run: sha256sum neva-view-* > SHA256SUMS
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          name: LSP ${{ steps.version.outputs.value }}
+          name: View ${{ steps.version.outputs.value }}
           prerelease: ${{ contains(github.ref_name, '-alpha.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-rc.') }}
           generate_release_notes: true
           files: release/*
