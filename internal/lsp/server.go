@@ -77,7 +77,7 @@ func (s *Server) indexAndNotifyProblems(notify glsp.NotifyFunc) error {
 		context.Background(),
 		workspacePath,
 	)
-	if found {
+	if found && compilerErr == nil {
 		s.setBuild(build)
 	}
 

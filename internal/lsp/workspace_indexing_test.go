@@ -103,9 +103,7 @@ func TestIndexAndNotifyProblemsUsesUnsavedOpenDocument(t *testing.T) {
 		problemFiles:    make(map[string]struct{}),
 		activeFileMutex: &sync.Mutex{},
 		openDocsMutex:   &sync.Mutex{},
-		openDocs: map[string]string{
-			normalizePathForLookup(mainPath): "def Broken(start) (stop) {}\n",
-		},
+		openDocs:        make(map[string]string),
 	}
 
 	var diagnostics []protocol.PublishDiagnosticsParams
@@ -121,7 +119,19 @@ func TestIndexAndNotifyProblemsUsesUnsavedOpenDocument(t *testing.T) {
 	}
 
 	if err := srv.indexAndNotifyProblems(notify); err != nil {
-		t.Fatalf("indexAndNotifyProblems: %v", err)
+		t.Fatalf("initial indexAndNotifyProblems: %v", err)
+	}
+	initialBuild, ok := srv.getBuild()
+	if !ok {
+		t.Fatal("expected valid workspace build before unsaved edit")
+	}
+	if _, err := srv.findFile(initialBuild, pathToURI(mainPath)); err != nil {
+		t.Fatalf("initial build does not contain open file: %v", err)
+	}
+
+	srv.setOpenDocument(pathToURI(mainPath), "def Broken(start) (stop) {}\n")
+	if err := srv.indexAndNotifyProblems(notify); err != nil {
+		t.Fatalf("unsaved indexAndNotifyProblems: %v", err)
 	}
 	if len(diagnostics) != 1 || len(diagnostics[0].Diagnostics) != 1 {
 		t.Fatalf("diagnostics = %#v, want one compiler diagnostic", diagnostics)
@@ -131,6 +141,13 @@ func TestIndexAndNotifyProblemsUsesUnsavedOpenDocument(t *testing.T) {
 	}
 	if diagnostics[0].Diagnostics[0].Source == nil || *diagnostics[0].Diagnostics[0].Source != "compiler" {
 		t.Fatalf("diagnostic source = %#v, want compiler", diagnostics[0].Diagnostics[0].Source)
+	}
+	retainedBuild, ok := srv.getBuild()
+	if !ok {
+		t.Fatal("expected to retain last valid build after unsaved compiler error")
+	}
+	if _, err := srv.findFile(retainedBuild, pathToURI(mainPath)); err != nil {
+		t.Fatalf("retained build does not contain open file: %v", err)
 	}
 
 	diskText, err := os.ReadFile(mainPath)
