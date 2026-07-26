@@ -78,6 +78,70 @@ func TestIndexAndNotifyProblemsWorkspaceWithoutRootMainPackage(t *testing.T) {
 	}
 }
 
+func TestIndexAndNotifyProblemsUsesUnsavedOpenDocument(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	mainPath := filepath.Join(workspace, "main.neva")
+	writeWorkspaceTestFile(t, filepath.Join(workspace, "neva.yml"), fmt.Sprintf("neva: %s\n", neva.Version))
+	writeWorkspaceTestFile(t, mainPath, `def Main(start any) (stop any) {
+	:start -> :stop
+}
+`)
+
+	idx, err := indexer.NewDefault(commonlog.GetLoggerf("neva-lsp.unsaved_diagnostics_test"))
+	if err != nil {
+		t.Fatalf("create indexer: %v", err)
+	}
+
+	srv := &Server{
+		workspacePath:   workspace,
+		logger:          commonlog.GetLoggerf("neva-lsp.unsaved_diagnostics_server_test"),
+		indexer:         idx,
+		indexMutex:      &sync.Mutex{},
+		problemsMutex:   &sync.Mutex{},
+		problemFiles:    make(map[string]struct{}),
+		activeFileMutex: &sync.Mutex{},
+		openDocsMutex:   &sync.Mutex{},
+		openDocs: map[string]string{
+			normalizePathForLookup(mainPath): "def Broken(start) (stop) {}\n",
+		},
+	}
+
+	var diagnostics []protocol.PublishDiagnosticsParams
+	notify := func(method string, params any) {
+		if method != protocol.ServerTextDocumentPublishDiagnostics {
+			return
+		}
+		published, ok := params.(protocol.PublishDiagnosticsParams)
+		if !ok {
+			t.Fatalf("unexpected diagnostics payload type: %T", params)
+		}
+		diagnostics = append(diagnostics, published)
+	}
+
+	if err := srv.indexAndNotifyProblems(notify); err != nil {
+		t.Fatalf("indexAndNotifyProblems: %v", err)
+	}
+	if len(diagnostics) != 1 || len(diagnostics[0].Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %#v, want one compiler diagnostic", diagnostics)
+	}
+	if diagnostics[0].URI != pathToURI(mainPath) {
+		t.Fatalf("diagnostic URI = %q, want %q", diagnostics[0].URI, pathToURI(mainPath))
+	}
+	if diagnostics[0].Diagnostics[0].Source == nil || *diagnostics[0].Diagnostics[0].Source != "compiler" {
+		t.Fatalf("diagnostic source = %#v, want compiler", diagnostics[0].Diagnostics[0].Source)
+	}
+
+	diskText, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatalf("read workspace source: %v", err)
+	}
+	if string(diskText) != "def Main(start any) (stop any) {\n\t:start -> :stop\n}\n" {
+		t.Fatalf("indexing modified workspace source: %q", diskText)
+	}
+}
+
 func writeWorkspaceTestFile(t *testing.T, path, content string) {
 	t.Helper()
 

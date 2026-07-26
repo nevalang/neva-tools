@@ -25,8 +25,9 @@ type Server struct {
 	logger  commonlog.Logger
 	indexer indexer.Indexer
 
-	indexMutex *sync.Mutex
-	index      *src.Build
+	indexMutex    *sync.Mutex
+	indexingMutex sync.Mutex
+	index         *src.Build
 
 	problemsMutex *sync.Mutex
 	problemFiles  map[string]struct{} // we only need to store file urls but not their problems
@@ -36,6 +37,9 @@ type Server struct {
 
 	openDocsMutex *sync.Mutex
 	openDocs      map[string]string
+
+	diagnosticsTimerMutex sync.Mutex
+	diagnosticsTimer      *time.Timer
 }
 
 // getBuild returns the latest indexed build snapshot when available.
@@ -60,17 +64,27 @@ func (s *Server) setBuild(build src.Build) {
 // indexAndNotifyProblems does full scan of the workspace
 // and sends diagnostics if there are any problems
 func (s *Server) indexAndNotifyProblems(notify glsp.NotifyFunc) error {
+	s.indexingMutex.Lock()
+	defer s.indexingMutex.Unlock()
+
+	workspacePath, cleanup, err := s.workspaceSnapshotForIndexing()
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
 	build, found, compilerErr := s.indexer.FullScan(
 		context.Background(),
-		s.workspacePath,
+		workspacePath,
 	)
-	if !found {
-		return nil
+	if found {
+		s.setBuild(build)
 	}
 
-	s.setBuild(build)
-
 	if compilerErr == nil {
+		if !found {
+			return nil
+		}
 		// clear problems
 		s.problemsMutex.Lock()
 		for uri := range s.problemFiles {
@@ -90,10 +104,11 @@ func (s *Server) indexAndNotifyProblems(notify glsp.NotifyFunc) error {
 
 	// remember problem and send diagnostic
 	s.problemsMutex.Lock()
-	uri := s.workspacePath
+	path := s.workspacePath
 	if compilerErr.Meta != nil {
-		uri = filepath.Join(s.workspacePath, compilerErr.Meta.Location.String())
+		path = filepath.Join(s.workspacePath, compilerErr.Meta.Location.String())
 	}
+	uri := pathToURI(path)
 	s.problemFiles[uri] = struct{}{}
 	notify(
 		protocol.ServerTextDocumentPublishDiagnostics,
@@ -112,7 +127,7 @@ func (s *Server) createDiagnostics(
 	startStopRange := diagnosticRange(indexerErr.Meta)
 
 	return protocol.PublishDiagnosticsParams{
-		URI: uri, // uri must be full path to the file, make sure all compiler errors include full location
+		URI: uri,
 		Diagnostics: []protocol.Diagnostic{
 			{
 				Range:    startStopRange,
