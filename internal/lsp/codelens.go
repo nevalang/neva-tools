@@ -1,7 +1,7 @@
 // CodeLens handlers add actionable inline annotations above declarations.
 // In Neva LSP we currently expose entity-level lenses for references and interface implementations,
 // then resolve them into VS Code's show-references command payload.
-package main
+package lsp
 
 import (
 	"encoding/json"

@@ -1,4 +1,4 @@
-package main
+package lsp
 
 import (
 	src "github.com/nevalang/neva/pkg/ast"

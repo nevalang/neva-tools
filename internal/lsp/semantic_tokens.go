@@ -1,7 +1,7 @@
 // Semantic tokens provide semantic highlighting categories beyond lexical tokenization.
 // We emit declaration/reference tokens for Neva entities plus node/port address segments
 // so editors can color symbols consistently across the current document.
-package main
+package lsp
 
 import (
 	"math"
