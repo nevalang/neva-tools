@@ -14,6 +14,7 @@ import type {
   ResolveEntityRefResult,
   SearchEntitiesResultItem,
 } from './types'
+import { requestVSCodeView, usesVSCodeTransport } from './viewTransport'
 
 async function getJSON<T>(url: string): Promise<T> {
   const response = await fetch(url)
@@ -186,6 +187,9 @@ export type SearchFilters = {
 
 export const viewClient = {
   async getProgram(filters: ProgramFilters): Promise<Program> {
+    if (usesVSCodeTransport()) {
+      return normalizeProgram(await requestVSCodeView<Program>('neva/view/getProgram', filters))
+    }
     const query = new URLSearchParams({
       includeCurrent: String(filters.includeCurrent),
       includeDeps: String(filters.includeDeps),
@@ -195,10 +199,22 @@ export const viewClient = {
   },
 
   async getFileView(fileId: string): Promise<FileView> {
+    if (usesVSCodeTransport()) {
+      return normalizeFile(await requestVSCodeView('neva/view/getFileView', { fileId }))
+    }
     return normalizeFile(await getJSON<any>(`/api/view/file?id=${encodeURIComponent(fileId)}`))
   },
 
   searchEntities(filters: SearchFilters): Promise<SearchEntitiesResultItem[]> {
+    if (usesVSCodeTransport()) {
+      return requestVSCodeView<SearchEntitiesResultItem[]>('neva/view/searchEntities', {
+        query: filters.query.trim(),
+        kinds: filters.kinds,
+        packageFilters: filters.packages,
+        moduleFilters: filters.modules,
+        limit: 100,
+      })
+    }
     const query = new URLSearchParams({ q: filters.query.trim() })
     for (const kind of filters.kinds) query.append('kind', kind)
     for (const pkg of filters.packages) query.append('package', pkg)
@@ -207,6 +223,12 @@ export const viewClient = {
   },
 
   resolveEntityRef(targetFileId: string, targetEntityId: string): Promise<ResolveEntityRefResult> {
+    if (usesVSCodeTransport()) {
+      return requestVSCodeView<ResolveEntityRefResult>('neva/view/resolveEntityRef', {
+        targetFileId,
+        targetEntityId,
+      })
+    }
     return postJSON('/api/view/resolve', { targetFileId, targetEntityId })
   },
 

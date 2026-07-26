@@ -75,6 +75,17 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    function onRefresh(event: MessageEvent<{ type?: string }>) {
+      if (event.data?.type !== 'neva/view/refresh') return
+      setFileCache({})
+      void reloadProgram()
+    }
+
+    window.addEventListener('message', onRefresh)
+    return () => window.removeEventListener('message', onRefresh)
+  }, [])
+
+  useEffect(() => {
     const fileID = routeFileID(route)
     if (!fileID || fileCache[fileID]) {
       return
