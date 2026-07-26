@@ -5,7 +5,7 @@ go 1.26
 toolchain go1.26.3
 
 require (
-	github.com/nevalang/neva v0.38.0
+	github.com/nevalang/neva v0.39.0
 	github.com/tliron/commonlog v0.2.10
 	github.com/tliron/glsp v0.2.2
 	gopkg.in/yaml.v3 v3.0.1
