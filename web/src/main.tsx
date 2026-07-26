@@ -1,11 +1,7 @@
-import React from 'react'
-import { createRoot } from 'react-dom/client'
-import { App } from './App'
-import './styles.css'
-import '@xyflow/react/dist/style.css'
+import { createHTTPViewBackend } from './hosts/httpViewBackend'
+import { createVSCodeViewBackend } from './hosts/vscodeViewBackend'
+import { mountApp } from './mountApp'
 
-createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+// This is a build-time host selection. The shared App and ViewBackend contract
+// deliberately have no knowledge of VS Code or browser transport details.
+mountApp(import.meta.env.MODE === 'vscode' ? createVSCodeViewBackend() : createHTTPViewBackend())
