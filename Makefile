@@ -1,15 +1,15 @@
-.PHONY: install install-view install-all test test-web test-all web-install web-build view
+.PHONY: install-lsp install-view install-all test test-web test-all web-install web-build view
 
 
 # Installs only the LSP. It has no Node.js or React dependency.
-install:
+install-lsp:
 	go install ./cmd/neva-lsp
 
 # Builds the shared browser UI, embeds it, then installs the standalone host.
 install-view: web-build
 	go install ./cmd/neva-view
 
-install-all: install install-view
+install-all: install-lsp install-view
 
 test:
 	go test ./...
