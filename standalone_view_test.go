@@ -123,13 +123,13 @@ func TestRegisterStaticUI_ServesIndexAndAssets(t *testing.T) {
 	}
 }
 
-func TestEmbeddedWebDistFS_HasIndex(t *testing.T) {
+func TestEmbeddedWebDistFS_IsAvailableBeforeWebBuild(t *testing.T) {
 	fsys, err := embeddedWebDistFS()
 	if err != nil {
 		t.Fatalf("embeddedWebDistFS() error: %v", err)
 	}
-	if _, err := fsys.Open("index.html"); err != nil {
-		t.Fatalf("embedded ui index.html open error: %v", err)
+	if _, err := fsys.Open("placeholder.txt"); err != nil {
+		t.Fatalf("embedded UI placeholder open error: %v", err)
 	}
 }
 

@@ -2,9 +2,9 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/nevalang/neva-lsp/internal/viewservice"
 	src "github.com/nevalang/neva/pkg/ast"
 	"github.com/nevalang/neva/pkg/view"
 	"github.com/tliron/glsp"
@@ -16,8 +16,7 @@ func (s *Server) GetProgramView(_ *glsp.Context, params GetProgramViewRequest) (
 		return nil, errors.New("program index is not ready")
 	}
 
-	program := view.ProjectProgram(*build)
-	return filterProgramModules(program, params), nil
+	return viewservice.Program(*build, params), nil
 }
 
 func (s *Server) GetFileView(_ *glsp.Context, params GetFileViewRequest) (any, error) {
@@ -30,39 +29,16 @@ func (s *Server) GetFileView(_ *glsp.Context, params GetFileViewRequest) (any, e
 		return nil, errors.New("program index is not ready")
 	}
 
-	fileView, found := projectFileView(*build, params.FileID)
-	if !found {
-		return nil, fmt.Errorf("file not found: %s", params.FileID)
-	}
-
-	return fileView, nil
+	return viewservice.File(*build, params)
 }
 
 func (s *Server) ResolveEntityRef(_ *glsp.Context, params ResolveEntityRefRequest) (any, error) {
-	if params.TargetFileID == "" {
-		return nil, errors.New("targetFileId is required")
-	}
-	if params.TargetEntityID == "" {
-		return nil, errors.New("targetEntityId is required")
-	}
-
 	build, ok := s.getBuild()
 	if !ok {
 		return nil, errors.New("program index is not ready")
 	}
 
-	// ResolveEntityRef works on canonical IDs produced by pkg/view projection.
-	// It is a stable lookup by normalized address, not a fresh scope-based AST resolve.
-	fileView, found := view.ProjectFileByID(*build, params.TargetFileID)
-	if !found {
-		return nil, fmt.Errorf("file not found: %s", params.TargetFileID)
-	}
-
-	result, found := findEntityInFile(fileView, params.TargetEntityID)
-	if !found {
-		return nil, fmt.Errorf("entity not found: %s", params.TargetEntityID)
-	}
-	return result, nil
+	return viewservice.Resolve(*build, params)
 }
 
 func (s *Server) SearchEntities(_ *glsp.Context, params SearchEntitiesRequest) (any, error) {
@@ -71,52 +47,7 @@ func (s *Server) SearchEntities(_ *glsp.Context, params SearchEntitiesRequest) (
 		return nil, errors.New("program index is not ready")
 	}
 
-	query := strings.TrimSpace(strings.ToLower(params.Query))
-	if query == "" {
-		return []SearchEntitiesResultItem{}, nil
-	}
-
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 100
-	}
-	allowedKinds := map[string]struct{}{}
-	for _, kind := range params.Kinds {
-		allowedKinds[strings.ToLower(strings.TrimSpace(kind))] = struct{}{}
-	}
-
-	moduleFilters := normalizeFilters(params.ModuleFilters, params.ModuleFilter)
-	packageFilters := normalizeFilters(params.PackageFilters, params.PackageFilter)
-
-	program := view.ProjectProgram(*build)
-	results := make([]SearchEntitiesResultItem, 0, limit)
-
-	for _, module := range program.Modules {
-		if len(moduleFilters) > 0 && !isInSet(moduleFilters, module.Path) {
-			continue
-		}
-		for _, pkg := range module.Packages {
-			qualifiedPackage := module.Path + "/" + pkg.Name
-			if len(packageFilters) > 0 && !isInSet(packageFilters, qualifiedPackage) {
-				continue
-			}
-			for _, fileSummary := range pkg.FileSummaries {
-				if len(results) >= limit {
-					return results, nil
-				}
-				fileView, found := view.ProjectFileByID(*build, fileSummary.ID)
-				if !found {
-					continue
-				}
-				appendEntityMatches(&results, fileView, module.Path, pkg.Name, query, allowedKinds, limit)
-				if len(results) >= limit {
-					return results, nil
-				}
-			}
-		}
-	}
-
-	return results, nil
+	return viewservice.Search(*build, params)
 }
 
 // ResolveFileLegacy is retained only as migration reference.

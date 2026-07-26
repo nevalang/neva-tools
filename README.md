@@ -8,7 +8,7 @@ Language server for the Neva programming language.
 make install
 ```
 
-`make install` builds `web/dist` first and then installs `neva-lsp` with embedded UI assets.
+`make install` installs `neva-lsp`. `make install-view` builds the shared React bundle and installs the separate `neva-view` CLI.
 
 ## Tests
 
@@ -24,7 +24,7 @@ make test-all
 Run from any directory and point to a Neva workspace explicitly:
 
 ```bash
-neva-lsp --view --view-port=7792 --view-workspace=/absolute/path/to/workspace
+neva-view --port=7792 --workspace=/absolute/path/to/workspace
 ```
 
 If you are already inside the workspace:
@@ -33,7 +33,7 @@ If you are already inside the workspace:
 make view
 ```
 
-If you run `neva-lsp --view` directly, make sure UI assets are built first:
+`neva-lsp --view` remains a compatibility alias. Both hosts use the same `web/` React source and the same transport-neutral Go view service. Build the UI before installation:
 
 ```bash
 cd web
