@@ -1,11 +1,11 @@
-# neva-lsp web
+# Neva View web
 
 Standalone UI for `neva/view/*` APIs.
 
 Boundary contract:
 - UI consumes only HTTP JSON endpoints under `/api/view/*`.
 - UI does not import compiler/indexer/AST internals.
-- Backend stays in Go (`neva-lsp`), frontend can be moved to a separate repo later without API changes.
+- The standalone backend is `neva-view`; `neva-lsp` consumes the same semantic view service through its JSON-RPC methods.
 
 ## Dev
 
@@ -20,4 +20,4 @@ npm run dev
 npm run build
 ```
 
-Build output is served by `neva-lsp -view` from `web/dist`.
+Build output is embedded by `neva-view` from `cmd/neva-view/assets`.

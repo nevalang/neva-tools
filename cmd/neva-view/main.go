@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nevalang/neva-lsp/internal/viewassets"
-	"github.com/nevalang/neva-lsp/internal/viewserver"
 	"github.com/tliron/commonlog"
 	_ "github.com/tliron/commonlog/simple"
 )
@@ -18,23 +16,39 @@ func main() {
 	open := flag.Bool("open", false, "open the editor in a browser")
 	workspace := flag.String("workspace", ".", "Neva workspace directory")
 	flag.Parse()
-	if *port < 1 || *port > 65535 {
-		panic(fmt.Errorf("port must be in range [1,65535], got %d", *port))
-	}
-	path, err := filepath.Abs(filepath.Clean(*workspace))
+	listenAddr, err := standaloneListenAddr(*port)
 	if err != nil {
 		panic(err)
 	}
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		panic(fmt.Errorf("workspace is not an accessible directory: %s", path))
+	path, err := resolveWorkspacePath(*workspace)
+	if err != nil {
+		panic(err)
 	}
-	ui, err := viewassets.FS()
+	ui, err := embeddedUIFS()
 	if err != nil {
 		panic(fmt.Errorf("load visual-editor UI: %w", err))
 	}
 	commonlog.Configure(1, nil)
-	if err := viewserver.Run(commonlog.GetLogger("neva.view"), viewserver.Config{WorkspacePath: path, ListenAddr: fmt.Sprintf("127.0.0.1:%d", *port), OpenBrowser: *open, UI: ui}); err != nil {
+	if err := runView(commonlog.GetLogger("neva.view"), viewConfig{WorkspacePath: path, ListenAddr: listenAddr, OpenBrowser: *open, UI: ui}); err != nil {
 		panic(err)
 	}
+}
+
+func standaloneListenAddr(port int) (string, error) {
+	if port < 1 || port > 65535 {
+		return "", fmt.Errorf("port must be in range [1,65535], got %d", port)
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port), nil
+}
+
+func resolveWorkspacePath(raw string) (string, error) {
+	path := filepath.Clean(raw)
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("workspace is not accessible: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workspace must be a directory: %s", path)
+	}
+	return filepath.Abs(path)
 }

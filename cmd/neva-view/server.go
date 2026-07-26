@@ -1,5 +1,4 @@
-// Package viewserver hosts the standalone Neva View browser application.
-package viewserver
+package main
 
 import (
 	"context"
@@ -15,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nevalang/neva-lsp/internal/viewservice"
+	"github.com/nevalang/neva-tools/internal/viewservice"
 	"github.com/nevalang/neva/pkg/ast"
 	"github.com/nevalang/neva/pkg/indexer"
 	"github.com/nevalang/neva/pkg/view"
@@ -24,7 +23,7 @@ import (
 )
 
 // Config describes one standalone visual-editor server.
-type Config struct {
+type viewConfig struct {
 	WorkspacePath string
 	ListenAddr    string
 	OpenBrowser   bool
@@ -32,7 +31,7 @@ type Config struct {
 }
 
 // Run scans a workspace once and hosts the common visual-editor UI and API.
-func Run(logger commonlog.Logger, config Config) error {
+func runView(logger commonlog.Logger, config viewConfig) error {
 	idx, err := indexer.NewDefault(logger)
 	if err != nil {
 		return fmt.Errorf("create indexer: %w", err)

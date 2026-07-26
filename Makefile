@@ -1,7 +1,7 @@
 .PHONY: install install-view test test-web test-all web-install web-build view
 
 install: web-build
-	go install .
+	go install ./cmd/neva-lsp
 
 install-view: web-build
 	go install ./cmd/neva-view

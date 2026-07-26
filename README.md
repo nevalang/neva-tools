@@ -1,4 +1,4 @@
-# neva-lsp
+# Neva Tools
 
 Language server for the Neva programming language.
 
@@ -33,7 +33,7 @@ If you are already inside the workspace:
 make view
 ```
 
-`neva-lsp --view` remains a compatibility alias. Both hosts use the same `web/` React source and the same transport-neutral Go view service. Build the UI before installation:
+`neva-view` is intentionally separate from `neva-lsp`: it owns HTTP and browser hosting, while both tools use the same transport-neutral `internal/viewservice` for visual-editor queries. Build the UI before installation:
 
 ```bash
 cd web

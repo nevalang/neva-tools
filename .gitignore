@@ -23,8 +23,9 @@ web/dist/
 web/*.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
-internal/viewassets/dist/index.html
-internal/viewassets/dist/assets/
+cmd/neva-view/assets/index.html
+cmd/neva-view/assets/assets/
 
-# Local dev binary
-neva-lsp-view
+# Local development binaries
+neva-lsp
+neva-view

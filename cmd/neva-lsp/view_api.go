@@ -1,6 +1,6 @@
 package main
 
-import "github.com/nevalang/neva-lsp/internal/viewservice"
+import "github.com/nevalang/neva-tools/internal/viewservice"
 
 const (
 	methodGetProgramView   = "neva/view/getProgram"
