@@ -65,6 +65,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Read release version
         id: version
         run: echo "value=${GITHUB_REF_NAME##*/}" >> "$GITHUB_OUTPUT"
@@ -77,6 +79,34 @@ jobs:
       - name: Write checksums
         working-directory: release
         run: sha256sum neva-lsp-* > SHA256SUMS
+
+      - name: Write LSP release manifest
+        working-directory: release
+        env:
+          LSP_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          NEVA_VERSION="$(awk '$1 == "github.com/nevalang/neva" { print $2; exit }' ../go.mod)"
+          if [[ -z "$NEVA_VERSION" ]]; then
+            echo "Neva dependency is missing from go.mod" >&2
+            exit 1
+          fi
+          jq -Rn \
+            --arg version "$LSP_VERSION" \
+            --arg nevaVersion "$NEVA_VERSION" \
+            '
+              (reduce inputs as $line
+                ({}; ($line | split("  ")) as [$sha256, $name] | .[$name] = $sha256))
+              as $assets
+              | {
+                  schemaVersion: 1,
+                  component: "lsp",
+                  version: $version,
+                  nevaVersion: $nevaVersion,
+                  assets: $assets
+                }
+            ' SHA256SUMS > LSP-MANIFEST.json
+          sha256sum LSP-MANIFEST.json >> SHA256SUMS
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
