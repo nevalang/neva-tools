@@ -51,8 +51,11 @@ jobs:
       - name: Build release binary
         run: |
           mkdir -p release
+          LSP_VERSION="${GITHUB_REF_NAME##*/}"
+          NEVA_VERSION="$(awk '$1 == "github.com/nevalang/neva" { print $2; exit }' go.mod)"
           CGO_ENABLED=0 GOOS=${{ matrix.target.goos }} GOARCH=${{ matrix.target.goarch }} \
-            go build -ldflags='-s -w' -o "release/${{ matrix.target.output }}" ./cmd/neva-lsp
+            go build -ldflags "-s -w -X main.version=${LSP_VERSION} -X main.nevaVersion=${NEVA_VERSION}" \
+              -o "release/${{ matrix.target.output }}" ./cmd/neva-lsp
 
       - uses: actions/upload-artifact@v4
         with:
