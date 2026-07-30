@@ -12,6 +12,17 @@ type VSCodeRequest = { type: 'neva/view/request'; id: string; method: ViewMethod
 type VSCodeResponse = { type: 'neva/view/response'; id: string; result?: unknown; error?: string }
 type VSCodeAPI = { postMessage(message: VSCodeRequest): void }
 
+const programIndexRetryDelayMs = 250
+const programIndexRetryAttempts = 20
+
+function isProgramIndexPending(error: unknown): boolean {
+  return error instanceof Error && /program index is not ready/i.test(error.message)
+}
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs))
+}
+
 declare global {
   interface Window { acquireVsCodeApi(): VSCodeAPI }
 }
@@ -39,9 +50,27 @@ export function createVSCodeViewBackend(): ViewBackend {
     })
   }
 
+  async function requestProgram(filters: ProgramFilters): Promise<Program> {
+    for (let attempt = 0; attempt < programIndexRetryAttempts; attempt += 1) {
+      try {
+        return await request<Program>('neva/view/getProgram', filters)
+      } catch (error) {
+        if (!isProgramIndexPending(error) || attempt === programIndexRetryAttempts - 1) {
+          throw error
+        }
+        await wait(programIndexRetryDelayMs)
+      }
+    }
+
+    throw new Error('program index did not become ready')
+  }
+
   return {
     async getProgram(filters: ProgramFilters): Promise<Program> {
-      return normalizeProgram(await request<Program>('neva/view/getProgram', filters))
+      // The LSP accepts requests before its initial workspace index is ready.
+      // Treat that transient state as loading rather than leaving Visual Mode
+      // permanently empty after its first request.
+      return normalizeProgram(await requestProgram(filters))
     },
     async getFileView(fileId) {
       return normalizeFile(await request('neva/view/getFileView', { fileId }))
