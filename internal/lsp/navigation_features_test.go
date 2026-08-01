@@ -173,7 +173,7 @@ def PrintSecondLine(data int) (res any, err error) {
 	if !strings.Contains(usagePkgHoverValue, "import streams std:streams") {
 		t.Fatalf("TextDocumentHover(streams pkg usage) value=%q, expected package import snippet", usagePkgHoverValue)
 	}
-	if !strings.Contains(usagePkgHoverValue, "[ForEach](") {
+	if !strings.Contains(usagePkgHoverValue, "[Enumerate](") {
 		t.Fatalf("TextDocumentHover(streams pkg usage) value=%q, expected clickable package entity links", usagePkgHoverValue)
 	}
 
