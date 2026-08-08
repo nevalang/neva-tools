@@ -47,6 +47,9 @@ func TestInitializeAdvertisesCodeLensResolveProvider(t *testing.T) {
 	if !*initResult.Capabilities.CodeLensProvider.ResolveProvider {
 		t.Fatal("Initialize() codeLensProvider.resolveProvider = false, want true")
 	}
+	if initResult.Capabilities.DocumentFormattingProvider == nil {
+		t.Fatal("Initialize() documentFormattingProvider is nil")
+	}
 }
 
 func TestImportedPackageAndEntityNavigationAndHover(t *testing.T) {

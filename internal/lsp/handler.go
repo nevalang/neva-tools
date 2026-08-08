@@ -194,7 +194,7 @@ func BuildHandler(logger commonlog.Logger, serverName string, indexer indexer.In
 	h.DocumentLinkResolve = nil
 	h.TextDocumentColor = nil
 	h.TextDocumentColorPresentation = nil
-	h.TextDocumentFormatting = nil
+	h.TextDocumentFormatting = s.TextDocumentFormatting
 	h.TextDocumentRangeFormatting = nil
 	h.TextDocumentOnTypeFormatting = nil
 	h.TextDocumentRename = s.TextDocumentRename
