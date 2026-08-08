@@ -68,8 +68,8 @@ github.com/mattn/go-runewidth v0.0.14 h1:+xnbZSEeDbOIg5/mE6JF0w6n9duR1l3/WmbinWV
 github.com/mattn/go-runewidth v0.0.14/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/muesli/termenv v0.15.2 h1:GohcuySI0QmI3wN8Ok9PtKGkgkFIk7y6Vpb5PvrY+Wo=
 github.com/muesli/termenv v0.15.2/go.mod h1:Epx+iuz8sNs7mNKhxzH4fWXGNpZwUaJKRS1noLXviQ8=
-github.com/nevalang/neva v0.40.0 h1:ZXlzqsk7TPC1l7pLuCTohdf0n3SwpAEuG2pkGrgwtkU=
-github.com/nevalang/neva v0.40.0/go.mod h1:yJW/d8SDuui5wbM/JuOcLt5UxZU+MZIoFd2/MZNKkTs=
+github.com/nevalang/neva v0.41.0 h1:xZl4bb0pdd4Vulu9QstDsWYaYaANkJCYca783NufQqo=
+github.com/nevalang/neva v0.41.0/go.mod h1:0gSDWL+bClOUjdLf/ur5r/LgUsYrAUBQkgy03XiWEQY=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
 github.com/petermattis/goid v0.0.0-20180202154549-b0b1615b78e5 h1:q2e307iGHPdTGp0hoxKjt1H5pDo6utceo3dQVK3I5XQ=
